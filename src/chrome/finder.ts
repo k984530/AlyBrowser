@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
-import { ChromeNotFoundError } from '../cdp/errors';
+import { ChromeNotFoundError } from '../errors';
 
 const MAC_CANDIDATES = [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',

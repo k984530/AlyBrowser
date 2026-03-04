@@ -9,11 +9,25 @@ let alarmEvents = [];
 
 // ── WebSocket Connection ────────────────────────────────────
 
+let connecting = false;
+
 function connect() {
-  ws = new WebSocket(`ws://localhost:${WS_PORT}`);
+  if (connecting) return;
+  connecting = true;
+
+  try {
+    ws = new WebSocket(`ws://localhost:${WS_PORT}`);
+  } catch {
+    connecting = false;
+    scheduleReconnect();
+    return;
+  }
 
   ws.onopen = async () => {
+    connecting = false;
     console.log('[aly] Connected to bridge');
+    // Cancel reconnect alarm since we're connected
+    chrome.alarms.clear('aly-reconnect');
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tabs[0]) {
       activeTabId = tabs[0].id;
@@ -28,23 +42,60 @@ function connect() {
     const cmd = JSON.parse(event.data);
     if (cmd.type === 'ping') return;
 
+    let response;
     try {
       const result = await handleCommand(cmd);
-      ws.send(JSON.stringify({ id: cmd.id, result }));
+      response = JSON.stringify({ id: cmd.id, result });
     } catch (err) {
-      ws.send(JSON.stringify({ id: cmd.id, error: err.message || String(err) }));
+      response = JSON.stringify({ id: cmd.id, error: err.message || String(err) });
+    }
+    try {
+      ws.send(response);
+    } catch {
+      // WS closed during async command — response is lost, onclose will handle reconnect
     }
   };
 
   ws.onclose = () => {
-    console.log('[aly] Disconnected, reconnecting in 2s...');
-    setTimeout(connect, 2000);
+    connecting = false;
+    console.log('[aly] Disconnected, scheduling reconnect...');
+    scheduleReconnect();
   };
 
-  ws.onerror = () => {};
+  ws.onerror = () => {
+    connecting = false;
+  };
 }
 
-// Keep service worker alive
+// Use chrome.alarms for reconnection — survives service worker suspension
+function scheduleReconnect() {
+  chrome.alarms.create('aly-reconnect', { periodInMinutes: 0.05 }); // every 3 seconds
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'aly-reconnect') {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      connect();
+    } else {
+      chrome.alarms.clear('aly-reconnect');
+    }
+    return;
+  }
+  // User-created alarms
+  alarmEvents.push({
+    name: alarm.name,
+    scheduledTime: alarm.scheduledTime,
+    firedAt: Date.now(),
+  });
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'alarm',
+      alarm: { name: alarm.name, scheduledTime: alarm.scheduledTime },
+    }));
+  }
+});
+
+// Keep service worker alive while connected
 setInterval(() => {
   if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'ping' }));
@@ -59,21 +110,16 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   }
 });
 
-// ── Alarm Events ────────────────────────────────────────────
+// ── Tab Lifecycle Cleanup ───────────────────────────────────
 
-chrome.alarms.onAlarm.addListener((alarm) => {
-  alarmEvents.push({
-    name: alarm.name,
-    scheduledTime: alarm.scheduledTime,
-    firedAt: Date.now(),
-  });
-  if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({
-      type: 'alarm',
-      alarm: { name: alarm.name, scheduledTime: alarm.scheduledTime },
-    }));
+chrome.tabs.onRemoved.addListener((tabId) => {
+  contentReady.delete(tabId);
+  if (tabId === activeTabId) {
+    activeTabId = null;
   }
 });
+
+// ── Alarm Events (user-created alarms handled in the unified alarm listener above) ──
 
 // ── Command Router ──────────────────────────────────────────
 
@@ -234,6 +280,7 @@ async function handleTabNew(params) {
 
 async function handleTabClose(params) {
   const tabId = params.tabId || activeTabId;
+  contentReady.delete(tabId);
   await chrome.tabs.remove(tabId);
   if (tabId === activeTabId) {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -354,8 +401,17 @@ async function handleAlarmList() {
 }
 
 async function handleAlarmClear(params) {
-  if (params.name) await chrome.alarms.clear(params.name);
-  else await chrome.alarms.clearAll();
+  if (params.name) {
+    await chrome.alarms.clear(params.name);
+  } else {
+    // Preserve internal reconnect alarm when clearing all user alarms
+    const alarms = await chrome.alarms.getAll();
+    for (const alarm of alarms) {
+      if (alarm.name !== 'aly-reconnect') {
+        await chrome.alarms.clear(alarm.name);
+      }
+    }
+  }
   return { ok: true };
 }
 

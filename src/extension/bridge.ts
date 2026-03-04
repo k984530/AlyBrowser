@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { spawn, type ChildProcess } from 'child_process';
-import { findChromeForTesting } from '../chrome/finder';
+import { findChrome } from '../chrome/finder';
 import { Deferred } from '../utils/deferred';
 import { Logger } from '../utils/logger';
 import * as path from 'path';
@@ -10,26 +10,27 @@ import { fileURLToPath } from 'url';
 
 const log = new Logger('ext-bridge');
 const WS_PORT = 19222;
+const PROFILE_DIR = path.join(os.homedir(), '.aly-browser', 'profile');
 
 export class ExtensionBridge {
   private wss: WebSocketServer | null = null;
   private ws: WebSocket | null = null;
   private chromeProcess: ChildProcess | null = null;
-  private userDataDir: string | null = null;
   private nextId = 1;
   private pending = new Map<number, Deferred<unknown>>();
 
-  async launch(options?: { url?: string }): Promise<void> {
-    const currentDir = typeof __dirname !== 'undefined'
-      ? __dirname
-      : path.dirname(fileURLToPath(import.meta.url));
-    const extensionDir = path.resolve(currentDir, '..', '..', 'extension');
-    if (!fs.existsSync(path.join(extensionDir, 'manifest.json'))) {
-      throw new Error(`Extension not found at ${extensionDir}`);
-    }
+  get isConnected(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
 
+  async launch(options?: { url?: string }): Promise<void> {
     await this.startServer();
-    this.launchChrome(extensionDir);
+
+    // Always attempt to launch Chrome with our dedicated profile.
+    // If Chrome is already running with this profile, the spawned process
+    // simply delegates to the existing instance and exits immediately.
+    this.launchChrome();
+
     await this.waitForExtension();
 
     if (options?.url) {
@@ -37,47 +38,83 @@ export class ExtensionBridge {
     }
   }
 
-  private startServer(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.wss = new WebSocketServer({ port: WS_PORT });
-      this.wss.on('listening', () => {
-        log.debug('WS server on port', WS_PORT);
-        resolve();
-      });
-      this.wss.on('error', reject);
-    });
+  private async startServer(): Promise<void> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          this.wss = new WebSocketServer({ port: WS_PORT });
+          this.wss.on('listening', () => {
+            log.debug('WS server on port', WS_PORT);
+            resolve();
+          });
+          this.wss.on('error', reject);
+        });
+        return;
+      } catch (err: unknown) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === 'EADDRINUSE' && attempt < 2) {
+          log.debug(`Port ${WS_PORT} busy, retrying in 1s... (attempt ${attempt + 1})`);
+          await new Promise((r) => setTimeout(r, 1000));
+          continue;
+        }
+        throw err;
+      }
+    }
   }
 
-  private launchChrome(extensionDir: string): void {
-    const chromePath = findChromeForTesting();
-    // Use persistent profile so login sessions survive restarts
-    this.userDataDir = path.join(os.homedir(), '.aly-browser', 'profile');
-    fs.mkdirSync(this.userDataDir, { recursive: true });
+  private launchChrome(): void {
+    const chromePath = findChrome();
+    fs.mkdirSync(PROFILE_DIR, { recursive: true });
+
+    const extensionDir = this.resolveExtensionDir();
 
     const flags = [
-      `--load-extension=${extensionDir}`,
-      `--user-data-dir=${this.userDataDir}`,
+      `--user-data-dir=${PROFILE_DIR}`,
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
       '--no-first-run',
-      '--disable-sync',
-      '--disable-default-apps',
       '--disable-popup-blocking',
       '--window-size=1280,720',
-      '--disable-component-update',
-      '--password-store=basic',
-      '--use-mock-keychain',
     ];
 
-    log.debug('Launch:', chromePath);
+    if (extensionDir) {
+      flags.push(`--load-extension=${extensionDir}`);
+    }
+
+    log.debug('Launch:', chromePath, 'profile:', PROFILE_DIR);
     this.chromeProcess = spawn(chromePath, flags, {
       stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    // If Chrome is already running with our profile, the spawned process
+    // delegates to the existing instance and exits immediately.
+    // Clear the handle so close() won't try to kill it.
+    this.chromeProcess.on('exit', () => {
+      this.chromeProcess = null;
     });
 
     this.chromeProcess.stderr?.on('data', (c: Buffer) =>
       log.debug('chrome:', c.toString().trim()),
     );
     this.chromeProcess.on('error', (e) => log.error('chrome error:', e.message));
+  }
+
+  private resolveExtensionDir(): string | null {
+    // Handle both CJS (__dirname) and ESM (import.meta.url)
+    const thisDir = typeof __dirname !== 'undefined'
+      ? __dirname
+      : path.dirname(fileURLToPath(import.meta.url));
+    const candidates = [
+      path.resolve(thisDir, '../../extension'),
+      path.resolve(thisDir, '../extension'),
+      path.join(process.cwd(), 'extension'),
+    ];
+    for (const dir of candidates) {
+      if (fs.existsSync(path.join(dir, 'manifest.json'))) {
+        return dir;
+      }
+    }
+    return null;
   }
 
   private waitForExtension(): Promise<void> {
@@ -340,7 +377,9 @@ export class ExtensionBridge {
       this.ws = null;
     }
     if (this.wss) {
-      this.wss.close();
+      await new Promise<void>((resolve) => {
+        this.wss!.close(() => resolve());
+      });
       this.wss = null;
     }
 
@@ -360,6 +399,5 @@ export class ExtensionBridge {
     }
 
     // Keep persistent profile — don't delete on close
-    this.userDataDir = null;
   }
 }

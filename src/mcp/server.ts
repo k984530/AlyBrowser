@@ -3,15 +3,13 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { AlyBrowser } from '../browser';
-import { AlyPage } from '../page';
 import { ExtensionBridge } from '../extension/bridge';
 import { tools } from './tools';
 import { SiteKnowledge } from './site-knowledge';
 
 const INSTRUCTIONS = `\
 AlyBrowser is a lightweight browser SDK for AI agents. \
-It connects via a Chrome Extension bridge (stealth mode) that bypasses bot detection. \
+It connects via a Chrome Extension bridge that bypasses bot detection. \
 Pages are read through accessibility-tree snapshots with @eN ref IDs for interactive elements. \
 Always call browser_snapshot before interacting with elements to get fresh ref IDs.
 
@@ -27,9 +25,8 @@ When opening multiple tabs for parallel work:
 
 ## Waiting for Page Load
 
-Use browser_wait_for_stable(stableMs, timeout) instead of browser_sleep. \
-It uses MutationObserver to detect when DOM changes stop, which is more reliable than fixed delays. \
-Recommended: stableMs=3000, timeout=60000 for heavy SPA pages.
+Use browser_wait_for_stable(timeout) instead of browser_sleep. \
+It uses MutationObserver to detect when DOM changes stop (500ms quiet period), which is more reliable than fixed delays.
 
 ## Special Text Input (Slate.js, etc.)
 
@@ -37,11 +34,21 @@ For rich-text editors (Slate.js, ProseMirror, Draft.js): \
 Use browser_click on the editor first to set focus, then browser_type to input text. \
 The extension bridge dispatches proper beforeinput events that these frameworks handle correctly.
 
-## Site Knowledge
+## Site Knowledge (Core Feature)
 
-Use browser_learn to record success/fail experiences on specific sites. \
-On revisit, browser_navigate and browser_launch auto-attach recorded knowledge to the response, \
-so the agent avoids repeating past mistakes.`;
+IMPORTANT: Site Knowledge is a core feature that dramatically improves reliability across sessions. \
+Use browser_learn proactively to record what works and what doesn't on each site.
+
+When to record knowledge:
+- After discovering a working approach (e.g., "Slate.js editor requires browser_click before browser_type")
+- After a failure and recovery (e.g., "Login button is inside an iframe, use browser_eval to switch")
+- Site-specific selectors or workflows that differ from standard patterns
+
+Knowledge is automatically attached:
+- browser_navigate / browser_launch: Full history (up to 20 entries) on first visit to each path
+- browser_snapshot: Compact hints (up to 5 entries) when page URL changes
+
+The more you record, the fewer mistakes you repeat. Always check knowledge before trying complex site interactions.`;
 
 const AUTO_LEARN_TOOLS = new Set([
   'browser_navigate', 'browser_click', 'browser_type', 'browser_select',
@@ -67,16 +74,16 @@ function jsonResult(data: unknown): ToolResult {
 }
 
 export class AlyBrowserMCPServer {
-  private browser: AlyBrowser | null = null;
-  private page: AlyPage | null = null;
   private bridge: ExtensionBridge | null = null;
   private siteKnowledge = new SiteKnowledge();
   private recentFailures = new Map<string, Set<string>>();
+  private knowledgeShownPaths = new Set<string>();
+  private lastUrlPerTab = new Map<number, string>();
   readonly server: Server;
 
   constructor() {
     this.server = new Server(
-      { name: 'aly-browser', version: '0.2.0' },
+      { name: 'aly-browser', version: '0.3.0' },
       {
         capabilities: { tools: {} },
         instructions: INSTRUCTIONS,
@@ -84,10 +91,6 @@ export class AlyBrowserMCPServer {
     );
     this.registerTools();
     this.registerCleanup();
-  }
-
-  private get isStealth(): boolean {
-    return this.bridge !== null;
   }
 
   private registerTools(): void {
@@ -169,7 +172,7 @@ export class AlyBrowserMCPServer {
       case 'browser_wait_for_stable':
         return this.handleWaitForStable(args);
 
-      // Tabs (stealth only)
+      // Tabs
       case 'browser_tab_list':
         return this.handleTabList();
       case 'browser_tab_new':
@@ -179,7 +182,7 @@ export class AlyBrowserMCPServer {
       case 'browser_tab_switch':
         return this.handleTabSwitch(args);
 
-      // Cookies (stealth only)
+      // Cookies
       case 'browser_cookie_get':
         return this.handleCookieGet(args);
       case 'browser_cookie_set':
@@ -187,15 +190,15 @@ export class AlyBrowserMCPServer {
       case 'browser_cookie_delete':
         return this.handleCookieDelete(args);
 
-      // Downloads (stealth only)
+      // Downloads
       case 'browser_download':
         return this.handleDownload(args);
 
-      // History (stealth only)
+      // History
       case 'browser_history_search':
         return this.handleHistorySearch(args);
 
-      // Alarms (stealth only)
+      // Alarms
       case 'browser_alarm_create':
         return this.handleAlarmCreate(args);
       case 'browser_alarm_list':
@@ -203,17 +206,17 @@ export class AlyBrowserMCPServer {
       case 'browser_alarm_clear':
         return this.handleAlarmClear(args);
 
-      // Storage (stealth only)
+      // Storage
       case 'browser_storage_get':
         return this.handleStorageGet(args);
       case 'browser_storage_set':
         return this.handleStorageSet(args);
 
-      // Notifications (stealth only)
+      // Notifications
       case 'browser_notify':
         return this.handleNotify(args);
 
-      // Bookmarks (stealth only)
+      // Bookmarks
       case 'browser_bookmark_list':
         return this.handleBookmarkList(args);
       case 'browser_bookmark_create':
@@ -231,11 +234,11 @@ export class AlyBrowserMCPServer {
       case 'browser_get_knowledge':
         return this.handleGetKnowledge(args);
 
-      // Top Sites (stealth only)
+      // Top Sites
       case 'browser_top_sites':
         return this.handleTopSites();
 
-      // Clipboard (stealth only)
+      // Clipboard
       case 'browser_clipboard_read':
         return this.handleClipboardRead(args);
       case 'browser_clipboard_write':
@@ -249,88 +252,73 @@ export class AlyBrowserMCPServer {
   // ── Browser Control ─────────────────────────────────────────
 
   private async handleLaunch(args: Record<string, unknown>): Promise<ToolResult> {
-    // Clean up existing sessions
+    // Reuse existing browser if already connected
+    if (this.bridge?.isConnected) {
+      if (args.url) {
+        return this.handleNavigate(args);
+      }
+      return textResult('Browser already running (extension bridge).');
+    }
+
     await this.cleanupAll();
 
-    const stealth = (args.stealth as boolean | undefined) ?? true;
-
-    if (stealth) {
-      this.bridge = new ExtensionBridge();
-      await this.bridge.launch({ url: args.url as string | undefined });
-
-      if (args.url) {
-        const knowledge = this.siteKnowledge.formatForContext(args.url as string);
-        const prefix = knowledge ? `${knowledge}\n\n` : '';
-        const snapshot = await this.bridge.snapshot();
-        return textResult(
-          `Browser launched (stealth) → ${args.url}\n\n${prefix}${snapshot}`,
-        );
-      }
-      return textResult('Browser launched in stealth mode (extension bridge).');
-    }
-
-    // CDP mode
-    const headless = (args.headless as boolean | undefined) ?? true;
-    this.browser = await AlyBrowser.launch({ headless });
-    this.page = await this.browser.newPage();
+    this.bridge = new ExtensionBridge();
+    await this.bridge.launch({ url: args.url as string | undefined });
 
     if (args.url) {
-      const knowledge = this.siteKnowledge.formatForContext(args.url as string);
+      const url = args.url as string;
+      const kKey = this.knowledgeKey(url);
+      const knowledge = this.siteKnowledge.formatForContext(url);
       const prefix = knowledge ? `${knowledge}\n\n` : '';
-      await this.page.goto(args.url as string);
-      const snapshot = await this.page.snapshot();
+      this.knowledgeShownPaths.add(kKey);
+      this.lastUrlPerTab.set(0, url);
+      const snapshot = await this.bridge.snapshot();
       return textResult(
-        `Browser launched (CDP) → ${args.url}\n\n${prefix}${snapshot.accessibilityText}`,
+        `Browser launched → ${url}\n\n${prefix}${snapshot}`,
       );
     }
-    return textResult('Browser launched (CDP mode).');
+    return textResult('Browser launched (extension bridge).');
   }
 
   private async handleNavigate(args: Record<string, unknown>): Promise<ToolResult> {
     const url = args.url as string;
     const tabId = args.tabId as number | undefined;
-    const knowledge = this.siteKnowledge.formatForContext(url);
-    const prefix = knowledge ? `${knowledge}\n\n` : '';
+    const kKey = this.knowledgeKey(url);
 
-    if (this.bridge) {
-      await this.bridge.navigate(url, tabId);
-      const snap = await this.bridge.snapshot(tabId);
-      return textResult(`${prefix}${snap}`);
+    let prefix = '';
+    if (!this.knowledgeShownPaths.has(kKey)) {
+      const knowledge = this.siteKnowledge.formatForContext(url);
+      if (knowledge) prefix = `${knowledge}\n\n`;
+      this.knowledgeShownPaths.add(kKey);
     }
-    const page = this.ensurePage();
-    await page.goto(url);
-    const snap = await page.snapshot();
-    return textResult(`${prefix}${snap.accessibilityText}`);
+    this.lastUrlPerTab.set(tabId ?? 0, url);
+
+    this.ensureConnected();
+    await this.bridge!.navigate(url, tabId);
+    const snap = await this.bridge!.snapshot(tabId);
+    return textResult(`${prefix}${snap}`);
   }
 
   private async handleBack(args: Record<string, unknown>): Promise<ToolResult> {
     const tabId = args.tabId as number | undefined;
-    if (this.bridge) {
-      await this.bridge.goBack(tabId);
-      const snap = await this.bridge.snapshot(tabId);
-      return textResult(snap);
-    }
-    const page = this.ensurePage();
-    await page.goBack();
-    const snap = await page.snapshot();
-    return textResult(snap.accessibilityText);
+    this.ensureConnected();
+    await this.bridge!.goBack(tabId);
+    const snap = await this.bridge!.snapshot(tabId);
+    return textResult(snap);
   }
 
   private async handleForward(args: Record<string, unknown>): Promise<ToolResult> {
     const tabId = args.tabId as number | undefined;
-    if (this.bridge) {
-      await this.bridge.goForward(tabId);
-      const snap = await this.bridge.snapshot(tabId);
-      return textResult(snap);
-    }
-    const page = this.ensurePage();
-    await page.goForward();
-    const snap = await page.snapshot();
-    return textResult(snap.accessibilityText);
+    this.ensureConnected();
+    await this.bridge!.goForward(tabId);
+    const snap = await this.bridge!.snapshot(tabId);
+    return textResult(snap);
   }
 
   private async handleClose(): Promise<ToolResult> {
     await this.cleanupAll();
+    this.knowledgeShownPaths.clear();
+    this.lastUrlPerTab.clear();
     return textResult('Browser closed.');
   }
 
@@ -338,35 +326,41 @@ export class AlyBrowserMCPServer {
 
   private async handleSnapshot(args: Record<string, unknown>): Promise<ToolResult> {
     const tabId = args.tabId as number | undefined;
-    if (this.bridge) {
-      return textResult(await this.bridge.snapshot(tabId));
+    this.ensureConnected();
+    const snap = await this.bridge!.snapshot(tabId);
+
+    // Attach compact knowledge on page transition
+    const url = await this.getCurrentUrl(tabId);
+    if (url) {
+      const tabKey = tabId ?? 0;
+      const lastUrl = this.lastUrlPerTab.get(tabKey);
+      if (lastUrl !== url) {
+        this.lastUrlPerTab.set(tabKey, url);
+        const kKey = this.knowledgeKey(url);
+        if (!this.knowledgeShownPaths.has(kKey) && this.siteKnowledge.hasPath(url)) {
+          const hint = this.siteKnowledge.formatCompact(url);
+          if (hint) {
+            this.knowledgeShownPaths.add(kKey);
+            return textResult(`${hint}\n\n${snap}`);
+          }
+        }
+      }
     }
-    const page = this.ensurePage();
-    const snap = await page.snapshot();
-    return textResult(snap.accessibilityText);
+
+    return textResult(snap);
   }
 
   private async handleHTML(args: Record<string, unknown>): Promise<ToolResult> {
     const tabId = args.tabId as number | undefined;
-    if (this.bridge) {
-      return textResult(await this.bridge.getHTML(tabId));
-    }
-    const page = this.ensurePage();
-    const snap = await page.snapshot();
-    return textResult(snap.markdown);
+    this.ensureConnected();
+    return textResult(await this.bridge!.getHTML(tabId));
   }
 
   private async handleEval(args: Record<string, unknown>): Promise<ToolResult> {
     const expr = args.expression as string;
     const tabId = args.tabId as number | undefined;
-    if (this.bridge) {
-      const result = await this.bridge.evaluate(expr, tabId);
-      return textResult(
-        typeof result === 'string' ? result : JSON.stringify(result, null, 2),
-      );
-    }
-    const page = this.ensurePage();
-    const result = await page.evaluate(expr);
+    this.ensureConnected();
+    const result = await this.bridge!.evaluate(expr, tabId);
     return textResult(
       typeof result === 'string' ? result : JSON.stringify(result, null, 2),
     );
@@ -377,15 +371,10 @@ export class AlyBrowserMCPServer {
   private async handleClick(args: Record<string, unknown>): Promise<ToolResult> {
     const ref = args.ref as string;
     const tabId = args.tabId as number | undefined;
-    if (this.bridge) {
-      await this.bridge.click(ref, tabId);
-      const snap = await this.bridge.snapshot(tabId);
-      return textResult(`Clicked ${ref}\n\n${snap}`);
-    }
-    const page = this.ensurePage();
-    await page.click(ref);
-    const snap = await page.snapshot();
-    return textResult(`Clicked ${ref}\n\n${snap.accessibilityText}`);
+    this.ensureConnected();
+    await this.bridge!.click(ref, tabId);
+    const snap = await this.bridge!.snapshot(tabId);
+    return textResult(`Clicked ${ref}\n\n${snap}`);
   }
 
   private async handleType(args: Record<string, unknown>): Promise<ToolResult> {
@@ -393,59 +382,39 @@ export class AlyBrowserMCPServer {
     const text = args.text as string;
     const clear = (args.clear as boolean) ?? false;
     const tabId = args.tabId as number | undefined;
-    if (this.bridge) {
-      await this.bridge.type(ref, text, { clear, tabId });
-      const snap = await this.bridge.snapshot(tabId);
-      return textResult(`Typed "${text}" → ${ref}\n\n${snap}`);
-    }
-    const page = this.ensurePage();
-    await page.type(ref, text, { clear });
-    const snap = await page.snapshot();
-    return textResult(`Typed "${text}" → ${ref}\n\n${snap.accessibilityText}`);
+    this.ensureConnected();
+    await this.bridge!.type(ref, text, { clear, tabId });
+    const snap = await this.bridge!.snapshot(tabId);
+    return textResult(`Typed "${text}" → ${ref}\n\n${snap}`);
   }
 
   private async handleSelect(args: Record<string, unknown>): Promise<ToolResult> {
     const ref = args.ref as string;
     const value = args.value as string;
     const tabId = args.tabId as number | undefined;
-    if (this.bridge) {
-      await this.bridge.selectOption(ref, value, tabId);
-      const snap = await this.bridge.snapshot(tabId);
-      return textResult(`Selected "${value}" in ${ref}\n\n${snap}`);
-    }
-    const page = this.ensurePage();
-    await page.selectOption(ref, value);
-    const snap = await page.snapshot();
-    return textResult(`Selected "${value}" in ${ref}\n\n${snap.accessibilityText}`);
+    this.ensureConnected();
+    await this.bridge!.selectOption(ref, value, tabId);
+    const snap = await this.bridge!.snapshot(tabId);
+    return textResult(`Selected "${value}" in ${ref}\n\n${snap}`);
   }
 
   private async handleHover(args: Record<string, unknown>): Promise<ToolResult> {
     const ref = args.ref as string;
     const tabId = args.tabId as number | undefined;
-    if (this.bridge) {
-      await this.bridge.hover(ref, tabId);
-      const snap = await this.bridge.snapshot(tabId);
-      return textResult(`Hovered ${ref}\n\n${snap}`);
-    }
-    const page = this.ensurePage();
-    await page.hover(ref);
-    const snap = await page.snapshot();
-    return textResult(`Hovered ${ref}\n\n${snap.accessibilityText}`);
+    this.ensureConnected();
+    await this.bridge!.hover(ref, tabId);
+    const snap = await this.bridge!.snapshot(tabId);
+    return textResult(`Hovered ${ref}\n\n${snap}`);
   }
 
   private async handleScroll(args: Record<string, unknown>): Promise<ToolResult> {
     const x = (args.x as number) ?? 0;
     const y = (args.y as number) ?? 0;
     const tabId = args.tabId as number | undefined;
-    if (this.bridge) {
-      await this.bridge.scrollBy({ x, y, tabId });
-      const snap = await this.bridge.snapshot(tabId);
-      return textResult(`Scrolled (${x}, ${y})\n\n${snap}`);
-    }
-    const page = this.ensurePage();
-    await page.scrollBy({ x, y });
-    const snap = await page.snapshot();
-    return textResult(`Scrolled (${x}, ${y})\n\n${snap.accessibilityText}`);
+    this.ensureConnected();
+    await this.bridge!.scrollBy({ x, y, tabId });
+    const snap = await this.bridge!.snapshot(tabId);
+    return textResult(`Scrolled (${x}, ${y})\n\n${snap}`);
   }
 
   private async handleWait(args: Record<string, unknown>): Promise<ToolResult> {
@@ -453,60 +422,51 @@ export class AlyBrowserMCPServer {
     const timeout = args.timeout as number | undefined;
     const hidden = (args.hidden as boolean) ?? false;
     const tabId = args.tabId as number | undefined;
-    if (this.bridge) {
-      await this.bridge.waitForSelector(selector, { timeout, hidden, tabId });
-      return textResult(hidden
-        ? `Element "${selector}" disappeared.`
-        : `Element "${selector}" found.`);
-    }
-    const page = this.ensurePage();
-    await page.waitForSelector(selector, { timeout });
-    return textResult(`Element "${selector}" found.`);
+    this.ensureConnected();
+    await this.bridge!.waitForSelector(selector, { timeout, hidden, tabId });
+    return textResult(hidden
+      ? `Element "${selector}" disappeared.`
+      : `Element "${selector}" found.`);
   }
 
   private async handleWaitForStable(args: Record<string, unknown>): Promise<ToolResult> {
     const timeout = args.timeout as number | undefined;
-    const stableMs = args.stableMs as number | undefined;
+    const stableMs = 500;
     const tabId = args.tabId as number | undefined;
-    if (this.bridge) {
-      await this.bridge.waitForStable({ timeout, stableMs, tabId });
-      return textResult('DOM stabilized.');
-    }
-    const page = this.ensurePage();
-    // CDP mode: use waitForSelector as fallback (no MutationObserver support)
-    await new Promise((r) => setTimeout(r, stableMs ?? 1000));
-    return textResult('Waited for DOM stability (CDP fallback).');
+    this.ensureConnected();
+    await this.bridge!.waitForStable({ timeout, stableMs, tabId });
+    return textResult('DOM stabilized.');
   }
 
-  // ── Tab Management (stealth only) ───────────────────────────
+  // ── Tab Management ───────────────────────────────────────────
 
   private async handleTabList(): Promise<ToolResult> {
-    this.ensureBridge('browser_tab_list');
+    this.ensureConnected();
     return jsonResult(await this.bridge!.tabList());
   }
 
   private async handleTabNew(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_tab_new');
+    this.ensureConnected();
     const result = await this.bridge!.tabNew(args.url as string | undefined);
     return jsonResult(result);
   }
 
   private async handleTabClose(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_tab_close');
+    this.ensureConnected();
     await this.bridge!.tabClose(args.tabId as number | undefined);
     return textResult('Tab closed.');
   }
 
   private async handleTabSwitch(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_tab_switch');
+    this.ensureConnected();
     await this.bridge!.tabSwitch(args.tabId as number);
     return textResult(`Switched to tab ${args.tabId}.`);
   }
 
-  // ── Cookies (stealth only) ──────────────────────────────────
+  // ── Cookies ──────────────────────────────────────────────────
 
   private async handleCookieGet(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_cookie_get');
+    this.ensureConnected();
     const cookies = await this.bridge!.cookieGet(
       args.url as string,
       args.name as string | undefined,
@@ -515,21 +475,21 @@ export class AlyBrowserMCPServer {
   }
 
   private async handleCookieSet(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_cookie_set');
+    this.ensureConnected();
     await this.bridge!.cookieSet(args);
     return textResult('Cookie set.');
   }
 
   private async handleCookieDelete(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_cookie_delete');
+    this.ensureConnected();
     await this.bridge!.cookieDelete(args.url as string, args.name as string);
     return textResult('Cookie deleted.');
   }
 
-  // ── Downloads (stealth only) ────────────────────────────────
+  // ── Downloads ────────────────────────────────────────────────
 
   private async handleDownload(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_download');
+    this.ensureConnected();
     const result = await this.bridge!.download(
       args.url as string,
       args.filename as string | undefined,
@@ -537,10 +497,10 @@ export class AlyBrowserMCPServer {
     return jsonResult(result);
   }
 
-  // ── History (stealth only) ──────────────────────────────────
+  // ── History ──────────────────────────────────────────────────
 
   private async handleHistorySearch(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_history_search');
+    this.ensureConnected();
     const results = await this.bridge!.historySearch(
       args.query as string | undefined,
       args.maxResults as number | undefined,
@@ -548,10 +508,10 @@ export class AlyBrowserMCPServer {
     return jsonResult(results);
   }
 
-  // ── Alarms (stealth only) ───────────────────────────────────
+  // ── Alarms ───────────────────────────────────────────────────
 
   private async handleAlarmCreate(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_alarm_create');
+    this.ensureConnected();
     const result = await this.bridge!.alarmCreate(args.name as string, {
       delayInMinutes: args.delayInMinutes,
       periodInMinutes: args.periodInMinutes,
@@ -560,34 +520,34 @@ export class AlyBrowserMCPServer {
   }
 
   private async handleAlarmList(): Promise<ToolResult> {
-    this.ensureBridge('browser_alarm_list');
+    this.ensureConnected();
     return jsonResult(await this.bridge!.alarmList());
   }
 
   private async handleAlarmClear(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_alarm_clear');
+    this.ensureConnected();
     await this.bridge!.alarmClear(args.name as string | undefined);
     return textResult('Alarm cleared.');
   }
 
-  // ── Storage (stealth only) ──────────────────────────────────
+  // ── Storage ──────────────────────────────────────────────────
 
   private async handleStorageGet(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_storage_get');
+    this.ensureConnected();
     const data = await this.bridge!.storageGet(args.keys as string[] | undefined);
     return jsonResult(data);
   }
 
   private async handleStorageSet(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_storage_set');
+    this.ensureConnected();
     await this.bridge!.storageSet(args.data as Record<string, unknown>);
     return textResult('Storage updated.');
   }
 
-  // ── Notifications (stealth only) ────────────────────────────
+  // ── Notifications ────────────────────────────────────────────
 
   private async handleNotify(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_notify');
+    this.ensureConnected();
     const result = await this.bridge!.notify(
       args.title as string,
       args.message as string,
@@ -595,16 +555,16 @@ export class AlyBrowserMCPServer {
     return jsonResult(result);
   }
 
-  // ── Bookmarks (stealth only) ──────────────────────────────
+  // ── Bookmarks ──────────────────────────────────────────────
 
   private async handleBookmarkList(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_bookmark_list');
+    this.ensureConnected();
     const results = await this.bridge!.bookmarkList(args.query as string | undefined);
     return jsonResult(results);
   }
 
   private async handleBookmarkCreate(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_bookmark_create');
+    this.ensureConnected();
     const result = await this.bridge!.bookmarkCreate(
       args.title as string,
       args.url as string,
@@ -614,29 +574,29 @@ export class AlyBrowserMCPServer {
   }
 
   private async handleBookmarkDelete(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_bookmark_delete');
+    this.ensureConnected();
     await this.bridge!.bookmarkDelete(args.id as string);
     return textResult('Bookmark deleted.');
   }
 
-  // ── Top Sites (stealth only) ──────────────────────────────
+  // ── Top Sites ──────────────────────────────────────────────
 
   private async handleTopSites(): Promise<ToolResult> {
-    this.ensureBridge('browser_top_sites');
+    this.ensureConnected();
     return jsonResult(await this.bridge!.topSites());
   }
 
-  // ── Clipboard (stealth only) ──────────────────────────────
+  // ── Clipboard ──────────────────────────────────────────────
 
   private async handleClipboardRead(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_clipboard_read');
+    this.ensureConnected();
     const tabId = args.tabId as number | undefined;
     const text = await this.bridge!.clipboardRead(tabId);
     return textResult(typeof text === 'string' ? text : JSON.stringify(text));
   }
 
   private async handleClipboardWrite(args: Record<string, unknown>): Promise<ToolResult> {
-    this.ensureBridge('browser_clipboard_write');
+    this.ensureConnected();
     const tabId = args.tabId as number | undefined;
     await this.bridge!.clipboardWrite(args.text as string, tabId);
     return textResult('Clipboard updated.');
@@ -660,25 +620,28 @@ export class AlyBrowserMCPServer {
       return errorResult(`Invalid result: "${result}". Must be "success" or "fail".`);
     }
     this.siteKnowledge.add(url, action, result, note);
-    return textResult(`Recorded: (${result}) ${action} on ${url}`);
+    const entries = this.siteKnowledge.query(url);
+    return textResult(
+      `Recorded: (${result}) ${action} on ${url}\n` +
+      `Total entries for this site: ${entries.length}\n` +
+      `This knowledge will be auto-shown on future visits to this site.`,
+    );
   }
 
   private async handleGetKnowledge(args: Record<string, unknown>): Promise<ToolResult> {
     let url = args.url as string | undefined;
     if (!url) {
-      if (this.bridge) {
-        const href = await this.bridge.evaluate('location.href');
-        url = typeof href === 'string' ? href : String(href);
-      } else if (this.page) {
-        const href = await this.page.evaluate('location.href');
-        url = typeof href === 'string' ? href : String(href);
-      } else {
-        return errorResult('No browser running and no URL provided.');
-      }
+      this.ensureConnected();
+      const href = await this.bridge!.evaluate('location.href');
+      url = typeof href === 'string' ? href : String(href);
     }
     const entries = this.siteKnowledge.query(url);
     if (entries.length === 0) {
-      return textResult(`No knowledge recorded for ${url}`);
+      return textResult(
+        `No knowledge recorded for ${url}\n` +
+        `Use browser_learn to record experiences (success/fail) for this site.\n` +
+        `Example: browser_learn(url, action="click login", result="fail", note="button inside iframe")`,
+      );
     }
     return textResult(this.siteKnowledge.formatForContext(url)!);
   }
@@ -691,10 +654,6 @@ export class AlyBrowserMCPServer {
         const href = await this.bridge.evaluate('location.href', tabId);
         return typeof href === 'string' ? href : String(href);
       }
-      if (this.page) {
-        const href = await this.page.evaluate('location.href');
-        return typeof href === 'string' ? href : String(href);
-      }
     } catch {}
     return null;
   }
@@ -702,6 +661,18 @@ export class AlyBrowserMCPServer {
   private getDomain(url: string): string {
     try {
       return new URL(url).hostname.replace(/^www\./, '');
+    } catch {
+      return url;
+    }
+  }
+
+  private knowledgeKey(url: string): string {
+    try {
+      const parsed = new URL(url);
+      const domain = parsed.hostname.replace(/^www\./, '');
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      const prefix = segments.length > 0 ? `/${segments[0]}` : '/';
+      return `${domain}:${prefix}`;
     } catch {
       return url;
     }
@@ -736,18 +707,9 @@ export class AlyBrowserMCPServer {
 
   // ── Helpers ─────────────────────────────────────────────────
 
-  private ensurePage(): AlyPage {
-    if (!this.page) {
-      throw new Error('No browser running. Call browser_launch first.');
-    }
-    return this.page;
-  }
-
-  private ensureBridge(toolName: string): void {
+  private ensureConnected(): void {
     if (!this.bridge) {
-      throw new Error(
-        `${toolName} requires stealth mode. Launch with browser_launch(stealth: true).`,
-      );
+      throw new Error('No browser running. Call browser_launch first.');
     }
   }
 
@@ -755,11 +717,6 @@ export class AlyBrowserMCPServer {
     if (this.bridge) {
       await this.bridge.close().catch(() => {});
       this.bridge = null;
-    }
-    if (this.browser) {
-      await this.browser.close().catch(() => {});
-      this.browser = null;
-      this.page = null;
     }
   }
 

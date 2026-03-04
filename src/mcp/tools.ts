@@ -17,19 +17,11 @@ export const tools: ToolDefinition[] = [
   {
     name: 'browser_launch',
     description:
-      'Launch Chrome browser. stealth:true uses extension bridge (no CDP, bypasses bot detection). Default is stealth mode. If url is provided, auto-attaches any recorded site knowledge.',
+      'Launch Chrome browser via extension bridge. Uses persistent profile (~/.aly-browser/profile) so login sessions survive restarts. ' +
+      'If url is provided, auto-attaches recorded site knowledge. Use browser_get_knowledge for existing insights before complex site interactions.',
     inputSchema: {
       type: 'object',
       properties: {
-        stealth: {
-          type: 'boolean',
-          description:
-            'Use extension bridge for stealth mode (default: true). Set false for CDP mode.',
-        },
-        headless: {
-          type: 'boolean',
-          description: 'Run in headless mode (CDP mode only, default: true)',
-        },
         url: {
           type: 'string',
           description: 'URL to navigate to after launch',
@@ -39,7 +31,7 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: 'browser_navigate',
-    description: 'Navigate the current page to a URL. Auto-attaches any recorded site knowledge for that domain.',
+    description: 'Navigate the current page to a URL. Auto-attaches recorded site knowledge on first visit to each path.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -65,11 +57,48 @@ export const tools: ToolDefinition[] = [
     inputSchema: { type: 'object', properties: {} },
   },
 
+  // ── Site Knowledge (Core Feature) ────────────────────────
+  {
+    name: 'browser_learn',
+    description:
+      'IMPORTANT: Record success/fail experiences for sites to build persistent knowledge. ' +
+      'This is a core feature — the more you record, the fewer mistakes you repeat across sessions. ' +
+      'Record after: discovering working approaches, recovering from failures, finding site-specific patterns. ' +
+      'Example: After finding that a Slate.js editor needs click-before-type, record it as a success note.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Full URL where the experience occurred' },
+        action: { type: 'string', description: 'Action attempted (e.g., "type", "click")' },
+        result: {
+          type: 'string',
+          enum: ['success', 'fail'],
+          description: 'Whether the action succeeded or failed',
+        },
+        note: { type: 'string', description: 'Brief description of what happened' },
+      },
+      required: ['url', 'action', 'result', 'note'],
+    },
+  },
+  {
+    name: 'browser_get_knowledge',
+    description:
+      'Retrieve recorded site knowledge for a URL. If url is omitted, returns knowledge for the current page. ' +
+      'Use before attempting complex interactions on a site you have visited before.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'URL to query (omit for current page)' },
+      },
+    },
+  },
+
   // ── Page Reading ──────────────────────────────────────────
   {
     name: 'browser_snapshot',
     description:
-      'Capture accessibility tree snapshot. Returns text with @eN ref IDs for interactive elements.',
+      'Capture accessibility tree snapshot. Returns text with @eN ref IDs for interactive elements. ' +
+      'On page transition, compact site knowledge hints are auto-attached.',
     inputSchema: { type: 'object', properties: { ...tabIdProp } },
   },
   {
@@ -184,17 +213,13 @@ export const tools: ToolDefinition[] = [
   {
     name: 'browser_wait_for_stable',
     description:
-      'Wait until DOM stops changing (no mutations for stableMs). Detects SPA render completion via MutationObserver. Use instead of browser_sleep for page loading.',
+      'Wait until DOM stops changing (no mutations for 500ms). Detects SPA render completion via MutationObserver. Use instead of browser_sleep for page loading.',
     inputSchema: {
       type: 'object',
       properties: {
         timeout: {
           type: 'number',
           description: 'Max wait ms (default: 30000)',
-        },
-        stableMs: {
-          type: 'number',
-          description: 'Quiet period in ms to consider stable (default: 1000)',
         },
         ...tabIdProp,
       },
@@ -433,38 +458,6 @@ export const tools: ToolDefinition[] = [
     description:
       'Wait exactly 1 second. Use between actions to allow page updates. Fixed 1s — no configurable duration.',
     inputSchema: { type: 'object', properties: {} },
-  },
-
-  // ── Site Knowledge ────────────────────────────────────────
-  {
-    name: 'browser_learn',
-    description:
-      'Record a success/fail experience for a site URL. Helps avoid repeating mistakes on future visits.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        url: { type: 'string', description: 'Full URL where the experience occurred' },
-        action: { type: 'string', description: 'Action attempted (e.g., "type", "click")' },
-        result: {
-          type: 'string',
-          enum: ['success', 'fail'],
-          description: 'Whether the action succeeded or failed',
-        },
-        note: { type: 'string', description: 'Brief description of what happened' },
-      },
-      required: ['url', 'action', 'result', 'note'],
-    },
-  },
-  {
-    name: 'browser_get_knowledge',
-    description:
-      'Retrieve recorded site knowledge. If url is omitted, returns knowledge for the current page.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        url: { type: 'string', description: 'URL to query (omit for current page)' },
-      },
-    },
   },
 
   // ── Top Sites ──────────────────────────────────────────────

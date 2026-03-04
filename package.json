@@ -1,7 +1,7 @@
 {
   "name": "aly-browser",
-  "version": "0.1.0",
-  "description": "Lightweight browser SDK for AI agents — structured accessibility tree + Markdown extraction with @eN ref IDs",
+  "version": "0.3.0",
+  "description": "Lightweight browser SDK for AI agents — accessibility tree snapshots with @eN ref IDs via Chrome Extension bridge",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -22,7 +22,8 @@
     "aly-browser-mcp": "./dist/mcp/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "extension"
   ],
   "scripts": {
     "build": "tsup",
@@ -36,11 +37,9 @@
   "keywords": [
     "browser",
     "automation",
-    "cdp",
     "chrome",
     "ai",
-    "accessibility",
-    "devtools-protocol"
+    "accessibility"
   ],
   "license": "MIT",
   "engines": {
@@ -48,13 +47,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "htmlparser2": "^9.1.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/ws": "^8.5.0",
-    "devtools-protocol": "^0.0.1367902",
     "tsup": "^8.0.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"

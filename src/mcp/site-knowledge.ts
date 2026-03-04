@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-interface Entry {
+export interface Entry {
   url: string;
   action: string;
   result: 'success' | 'fail';
@@ -17,6 +17,7 @@ interface SiteData {
 
 const MAX_ENTRIES_PER_DOMAIN = 200;
 const MAX_CONTEXT_ENTRIES = 20;
+const MAX_COMPACT_ENTRIES = 5;
 
 export class SiteKnowledge {
   private baseDir: string;
@@ -124,5 +125,33 @@ export class SiteKnowledge {
       ? ` (showing last ${MAX_CONTEXT_ENTRIES} of ${entries.length})`
       : '';
     return `[Site Knowledge] ${domain} — ${recent.length} entries${countNote}\n${lines.join('\n')}`;
+  }
+
+  formatCompact(url: string): string | null {
+    const { domain, pathname } = this.parseUrl(url);
+    const data = this.load(domain);
+    const entries = data.entries.filter((e) => this.pathMatches(e.url, pathname));
+    if (entries.length === 0) return null;
+
+    const recent = entries.slice(-MAX_COMPACT_ENTRIES);
+    const lines = recent.map(
+      (e) => `${e.result === 'fail' ? '✗' : '✓'} ${e.action}: ${e.note}`,
+    );
+    const more = entries.length > MAX_COMPACT_ENTRIES
+      ? ` (+${entries.length - MAX_COMPACT_ENTRIES} more)`
+      : '';
+    return `[Knowledge: ${domain}${more}] ${lines.join(' | ')}`;
+  }
+
+  hasDomain(url: string): boolean {
+    const { domain } = this.parseUrl(url);
+    const data = this.load(domain);
+    return data.entries.length > 0;
+  }
+
+  hasPath(url: string): boolean {
+    const { domain, pathname } = this.parseUrl(url);
+    const data = this.load(domain);
+    return data.entries.some((e) => this.pathMatches(e.url, pathname));
   }
 }
