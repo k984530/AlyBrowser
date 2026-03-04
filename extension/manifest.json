@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "AlyBrowser Bridge",
+  "version": "1.0",
+  "description": "Browser automation bridge for AlyBrowser MCP — stealth mode",
+  "permissions": [
+    "activeTab",
+    "alarms",
+    "bookmarks",
+    "clipboardRead",
+    "clipboardWrite",
+    "cookies",
+    "downloads",
+    "history",
+    "notifications",
+    "scripting",
+    "search",
+    "storage",
+    "tabs",
+    "topSites",
+    "webNavigation"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [{
+    "matches": ["http://*/*", "https://*/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle",
+    "all_frames": false
+  }]
+}

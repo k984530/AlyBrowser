@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="A test page for AlyBrowser">
+  <title>Test Page</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    nav { background: #f0f0f0; padding: 10px; margin-bottom: 20px; }
+    nav a { margin-right: 15px; }
+    .hidden { display: none; }
+    .search-box { padding: 8px; margin-right: 8px; }
+    table { border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; }
+  </style>
+</head>
+<body>
+  <nav aria-label="Main Navigation">
+    <a href="/">Home</a>
+    <a href="/about">About</a>
+    <a href="/contact">Contact</a>
+  </nav>
+
+  <main>
+    <h1>Welcome to Test Page</h1>
+    <p>This is a paragraph with <strong>bold text</strong> and <em>italic text</em>.</p>
+
+    <form>
+      <input type="search" placeholder="Search..." class="search-box" aria-label="Search">
+      <button type="submit">Search</button>
+    </form>
+
+    <h2>Features</h2>
+    <ul>
+      <li>Fast accessibility tree extraction</li>
+      <li>Clean markdown output</li>
+      <li>Ref ID based interaction</li>
+    </ul>
+
+    <h2>Settings</h2>
+    <label>
+      <input type="checkbox" name="notifications"> Enable notifications
+    </label>
+    <br>
+    <label>
+      Theme:
+      <select name="theme">
+        <option value="light" selected>Light</option>
+        <option value="dark">Dark</option>
+        <option value="auto">Auto</option>
+      </select>
+    </label>
+
+    <h2>Data Table</h2>
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Role</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Alice</td><td>Developer</td><td>Active</td></tr>
+        <tr><td>Bob</td><td>Designer</td><td>Away</td></tr>
+      </tbody>
+    </table>
+  </main>
+
+  <div class="hidden" aria-hidden="true">
+    <p>This content should be filtered out.</p>
+  </div>
+
+  <script>
+    // This script tag should be filtered out by DOM filter
+    console.log('test');
+  </script>
+</body>
+</html>
