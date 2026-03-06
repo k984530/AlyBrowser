@@ -9,8 +9,30 @@ import * as os from 'os';
 import { fileURLToPath } from 'url';
 
 const log = new Logger('ext-bridge');
-const WS_PORT = 19222;
-const PROFILE_DIR = path.join(os.homedir(), '.aly-browser', 'profile');
+const BASE_DIR = path.join(os.homedir(), '.aly-browser');
+const SESSIONS_DIR = path.join(BASE_DIR, 'sessions');
+const DEFAULT_PORT = 19222;
+
+/** Find a free port by actually binding a WebSocketServer to it (no TOCTOU gap). */
+async function bindWSServer(startPort: number): Promise<{ wss: WebSocketServer; port: number }> {
+  for (let port = startPort; port <= 19322; port++) {
+    try {
+      const wss = await new Promise<WebSocketServer>((resolve, reject) => {
+        const server = new WebSocketServer({ port });
+        server.on('listening', () => resolve(server));
+        server.on('error', reject);
+      });
+      return { wss, port };
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'EADDRINUSE') continue;
+      throw err;
+    }
+  }
+  throw new Error('No free port found in range 19222-19322');
+}
+
+const SESSION_ID_RE = /^[a-zA-Z0-9_-]+$/;
 
 export class ExtensionBridge {
   private wss: WebSocketServer | null = null;
@@ -18,6 +40,29 @@ export class ExtensionBridge {
   private chromeProcess: ChildProcess | null = null;
   private nextId = 1;
   private pending = new Map<number, Deferred<unknown>>();
+  private _port: number = 0;
+  private _sessionId: string;
+  private _sessionDir: string;
+  private _profileDir: string;
+  private _extensionCopyDir: string;
+
+  constructor(sessionId: string = 'default') {
+    if (!SESSION_ID_RE.test(sessionId)) {
+      throw new Error(`Invalid sessionId "${sessionId}". Only alphanumeric, hyphen, and underscore allowed.`);
+    }
+    this._sessionId = sessionId;
+    this._sessionDir = path.join(SESSIONS_DIR, sessionId);
+    this._profileDir = path.join(this._sessionDir, 'profile');
+    this._extensionCopyDir = path.join(this._sessionDir, 'extension');
+  }
+
+  get sessionId(): string {
+    return this._sessionId;
+  }
+
+  get port(): number {
+    return this._port;
+  }
 
   get isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
@@ -25,12 +70,8 @@ export class ExtensionBridge {
 
   async launch(options?: { url?: string }): Promise<void> {
     await this.startServer();
-
-    // Always attempt to launch Chrome with our dedicated profile.
-    // If Chrome is already running with this profile, the spawned process
-    // simply delegates to the existing instance and exits immediately.
+    this.prepareSessionExtension();
     this.launchChrome();
-
     await this.waitForExtension();
 
     if (options?.url) {
@@ -39,37 +80,50 @@ export class ExtensionBridge {
   }
 
   private async startServer(): Promise<void> {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        await new Promise<void>((resolve, reject) => {
-          this.wss = new WebSocketServer({ port: WS_PORT });
-          this.wss.on('listening', () => {
-            log.debug('WS server on port', WS_PORT);
-            resolve();
-          });
-          this.wss.on('error', reject);
-        });
-        return;
-      } catch (err: unknown) {
-        const code = (err as NodeJS.ErrnoException).code;
-        if (code === 'EADDRINUSE' && attempt < 2) {
-          log.debug(`Port ${WS_PORT} busy, retrying in 1s... (attempt ${attempt + 1})`);
-          await new Promise((r) => setTimeout(r, 1000));
-          continue;
+    fs.mkdirSync(this._sessionDir, { recursive: true });
+
+    const { wss, port } = await bindWSServer(DEFAULT_PORT);
+    this.wss = wss;
+    this._port = port;
+
+    log.debug(`WS server on port ${this._port} (session: ${this._sessionId})`);
+    fs.writeFileSync(path.join(this._sessionDir, 'port'), String(this._port));
+    fs.writeFileSync(path.join(this._sessionDir, 'pid'), String(process.pid));
+  }
+
+  /** Copy the extension directory and inject the session's WS port into background.js */
+  private prepareSessionExtension(): void {
+    const sourceDir = this.resolveExtensionDir();
+    if (!sourceDir) return;
+
+    fs.mkdirSync(this._extensionCopyDir, { recursive: true });
+
+    // Copy all extension files
+    for (const file of fs.readdirSync(sourceDir)) {
+      const src = path.join(sourceDir, file);
+      const dest = path.join(this._extensionCopyDir, file);
+      if (fs.statSync(src).isFile()) {
+        if (file === 'background.js') {
+          // Inject port into background.js
+          let content = fs.readFileSync(src, 'utf-8');
+          content = content.replace(
+            /const WS_PORT = \d+;/,
+            `const WS_PORT = ${this._port};`,
+          );
+          fs.writeFileSync(dest, content);
+        } else {
+          fs.copyFileSync(src, dest);
         }
-        throw err;
       }
     }
   }
 
   private launchChrome(): void {
     const chromePath = findChrome();
-    fs.mkdirSync(PROFILE_DIR, { recursive: true });
-
-    const extensionDir = this.resolveExtensionDir();
+    fs.mkdirSync(this._profileDir, { recursive: true });
 
     const flags = [
-      `--user-data-dir=${PROFILE_DIR}`,
+      `--user-data-dir=${this._profileDir}`,
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
       '--no-first-run',
@@ -77,18 +131,15 @@ export class ExtensionBridge {
       '--window-size=1280,720',
     ];
 
-    if (extensionDir) {
-      flags.push(`--load-extension=${extensionDir}`);
+    if (fs.existsSync(path.join(this._extensionCopyDir, 'manifest.json'))) {
+      flags.push(`--load-extension=${this._extensionCopyDir}`);
     }
 
-    log.debug('Launch:', chromePath, 'profile:', PROFILE_DIR);
+    log.debug('Launch:', chromePath, 'session:', this._sessionId, 'port:', this._port);
     this.chromeProcess = spawn(chromePath, flags, {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    // If Chrome is already running with our profile, the spawned process
-    // delegates to the existing instance and exits immediately.
-    // Clear the handle so close() won't try to kill it.
     this.chromeProcess.on('exit', () => {
       this.chromeProcess = null;
     });
@@ -100,7 +151,6 @@ export class ExtensionBridge {
   }
 
   private resolveExtensionDir(): string | null {
-    // Handle both CJS (__dirname) and ESM (import.meta.url)
     const thisDir = typeof __dirname !== 'undefined'
       ? __dirname
       : path.dirname(fileURLToPath(import.meta.url));
@@ -125,7 +175,7 @@ export class ExtensionBridge {
     );
 
     this.wss!.on('connection', (ws) => {
-      log.debug('Extension connected');
+      log.debug('Extension connected (session:', this._sessionId, ')');
       this.ws = ws;
 
       ws.on('message', (data) => {
@@ -398,6 +448,8 @@ export class ExtensionBridge {
       this.chromeProcess = null;
     }
 
-    // Keep persistent profile — don't delete on close
+    // Clean up session metadata files (keep profile for persistence)
+    try { fs.unlinkSync(path.join(this._sessionDir, 'port')); } catch {}
+    try { fs.unlinkSync(path.join(this._sessionDir, 'pid')); } catch {}
   }
 }

@@ -12,12 +12,17 @@ const tabIdProp = {
   tabId: { type: 'number', description: 'Target tab ID (default: active tab). Use for multi-tab parallel work.' },
 };
 
+const sessionIdProp = {
+  sessionId: { type: 'string', description: 'Browser session ID (default: "default"). Use different sessionIds for isolated browser instances with separate cookies/profiles — required for multi-account scenarios (e.g., multiple Instagram logins).' },
+};
+
 export const tools: ToolDefinition[] = [
   // ── Browser Control ───────────────────────────────────────
   {
     name: 'browser_launch',
     description:
-      'Launch Chrome browser via extension bridge. Uses persistent profile (~/.aly-browser/profile) so login sessions survive restarts. ' +
+      'Launch Chrome browser via extension bridge. Each sessionId gets its own isolated Chrome instance with separate cookies/profile. ' +
+      'Use different sessionIds for multi-account scenarios (e.g., sessionId "insta-a" and "insta-b" for two Instagram accounts). ' +
       'If url is provided, auto-attaches recorded site knowledge. Use browser_get_knowledge for existing insights before complex site interactions.',
     inputSchema: {
       type: 'object',
@@ -26,6 +31,7 @@ export const tools: ToolDefinition[] = [
           type: 'string',
           description: 'URL to navigate to after launch',
         },
+        ...sessionIdProp,
       },
     },
   },
@@ -37,6 +43,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         url: { type: 'string', description: 'URL to navigate to' },
         ...tabIdProp,
+        ...sessionIdProp,
       },
       required: ['url'],
     },
@@ -44,17 +51,17 @@ export const tools: ToolDefinition[] = [
   {
     name: 'browser_back',
     description: 'Navigate back in browser history.',
-    inputSchema: { type: 'object', properties: { ...tabIdProp } },
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
   },
   {
     name: 'browser_forward',
     description: 'Navigate forward in browser history.',
-    inputSchema: { type: 'object', properties: { ...tabIdProp } },
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
   },
   {
     name: 'browser_close',
-    description: 'Close the browser and clean up resources.',
-    inputSchema: { type: 'object', properties: {} },
+    description: 'Close a browser session. If sessionId is omitted, closes the default session.',
+    inputSchema: { type: 'object', properties: { ...sessionIdProp } },
   },
 
   // ── Site Knowledge (Core Feature) ────────────────────────
@@ -99,12 +106,12 @@ export const tools: ToolDefinition[] = [
     description:
       'Capture accessibility tree snapshot. Returns text with @eN ref IDs for interactive elements. ' +
       'On page transition, compact site knowledge hints are auto-attached.',
-    inputSchema: { type: 'object', properties: { ...tabIdProp } },
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
   },
   {
     name: 'browser_html',
     description: 'Get the current page HTML content.',
-    inputSchema: { type: 'object', properties: { ...tabIdProp } },
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
   },
   {
     name: 'browser_eval',
@@ -118,6 +125,7 @@ export const tools: ToolDefinition[] = [
           description: 'JavaScript expression to evaluate',
         },
         ...tabIdProp,
+        ...sessionIdProp,
       },
       required: ['expression'],
     },
@@ -132,6 +140,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         ref: { type: 'string', description: 'Element ref ID (e.g., "@e3")' },
         ...tabIdProp,
+        ...sessionIdProp,
       },
       required: ['ref'],
     },
@@ -149,6 +158,7 @@ export const tools: ToolDefinition[] = [
           description: 'Clear existing content first (default: false)',
         },
         ...tabIdProp,
+        ...sessionIdProp,
       },
       required: ['ref', 'text'],
     },
@@ -162,6 +172,7 @@ export const tools: ToolDefinition[] = [
         ref: { type: 'string', description: 'Element ref ID' },
         value: { type: 'string', description: 'Option value to select' },
         ...tabIdProp,
+        ...sessionIdProp,
       },
       required: ['ref', 'value'],
     },
@@ -174,6 +185,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         ref: { type: 'string', description: 'Element ref ID' },
         ...tabIdProp,
+        ...sessionIdProp,
       },
       required: ['ref'],
     },
@@ -187,6 +199,7 @@ export const tools: ToolDefinition[] = [
         x: { type: 'number', description: 'Horizontal scroll pixels' },
         y: { type: 'number', description: 'Vertical scroll pixels' },
         ...tabIdProp,
+        ...sessionIdProp,
       },
     },
   },
@@ -206,6 +219,7 @@ export const tools: ToolDefinition[] = [
           description: 'Wait for selector to disappear instead of appear (default: false)',
         },
         ...tabIdProp,
+        ...sessionIdProp,
       },
       required: ['selector'],
     },
@@ -222,6 +236,7 @@ export const tools: ToolDefinition[] = [
           description: 'Max wait ms (default: 30000)',
         },
         ...tabIdProp,
+        ...sessionIdProp,
       },
     },
   },
@@ -230,7 +245,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'browser_tab_list',
     description: 'List all open browser tabs.',
-    inputSchema: { type: 'object', properties: {} },
+    inputSchema: { type: 'object', properties: { ...sessionIdProp } },
   },
   {
     name: 'browser_tab_new',
@@ -239,6 +254,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         url: { type: 'string', description: 'URL to open (default: about:blank)' },
+        ...sessionIdProp,
       },
     },
   },
@@ -249,6 +265,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         tabId: { type: 'number', description: 'Tab ID to close (default: active tab)' },
+        ...sessionIdProp,
       },
     },
   },
@@ -259,6 +276,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         tabId: { type: 'number', description: 'Tab ID to activate' },
+        ...sessionIdProp,
       },
       required: ['tabId'],
     },
@@ -273,6 +291,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         url: { type: 'string', description: 'URL to get cookies for' },
         name: { type: 'string', description: 'Filter by cookie name' },
+        ...sessionIdProp,
       },
       required: ['url'],
     },
@@ -291,6 +310,7 @@ export const tools: ToolDefinition[] = [
         secure: { type: 'boolean', description: 'Secure flag' },
         httpOnly: { type: 'boolean', description: 'HttpOnly flag' },
         expirationDate: { type: 'number', description: 'Expiration (unix timestamp)' },
+        ...sessionIdProp,
       },
       required: ['url', 'name', 'value'],
     },
@@ -303,6 +323,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         url: { type: 'string', description: 'URL of the cookie' },
         name: { type: 'string', description: 'Cookie name' },
+        ...sessionIdProp,
       },
       required: ['url', 'name'],
     },
@@ -317,6 +338,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         url: { type: 'string', description: 'URL to download' },
         filename: { type: 'string', description: 'Save filename' },
+        ...sessionIdProp,
       },
       required: ['url'],
     },
@@ -331,6 +353,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         query: { type: 'string', description: 'Search text' },
         maxResults: { type: 'number', description: 'Max results (default: 20)' },
+        ...sessionIdProp,
       },
     },
   },
@@ -352,6 +375,7 @@ export const tools: ToolDefinition[] = [
           type: 'number',
           description: 'Repeat interval in minutes',
         },
+        ...sessionIdProp,
       },
       required: ['name'],
     },
@@ -359,7 +383,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'browser_alarm_list',
     description: 'List all active alarms.',
-    inputSchema: { type: 'object', properties: {} },
+    inputSchema: { type: 'object', properties: { ...sessionIdProp } },
   },
   {
     name: 'browser_alarm_clear',
@@ -368,6 +392,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Alarm name (omit for all)' },
+        ...sessionIdProp,
       },
     },
   },
@@ -384,6 +409,7 @@ export const tools: ToolDefinition[] = [
           items: { type: 'string' },
           description: 'Keys to retrieve (null for all)',
         },
+        ...sessionIdProp,
       },
     },
   },
@@ -397,6 +423,7 @@ export const tools: ToolDefinition[] = [
           type: 'object',
           description: 'Key-value pairs to store',
         },
+        ...sessionIdProp,
       },
       required: ['data'],
     },
@@ -411,6 +438,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         title: { type: 'string', description: 'Notification title' },
         message: { type: 'string', description: 'Notification message' },
+        ...sessionIdProp,
       },
       required: ['title', 'message'],
     },
@@ -424,6 +452,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Search query (omit for full tree)' },
+        ...sessionIdProp,
       },
     },
   },
@@ -436,6 +465,7 @@ export const tools: ToolDefinition[] = [
         title: { type: 'string', description: 'Bookmark title' },
         url: { type: 'string', description: 'Bookmark URL' },
         parentId: { type: 'string', description: 'Parent folder ID' },
+        ...sessionIdProp,
       },
       required: ['title', 'url'],
     },
@@ -447,6 +477,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Bookmark ID to delete' },
+        ...sessionIdProp,
       },
       required: ['id'],
     },
@@ -464,14 +495,14 @@ export const tools: ToolDefinition[] = [
   {
     name: 'browser_top_sites',
     description: 'Get the most visited sites.',
-    inputSchema: { type: 'object', properties: {} },
+    inputSchema: { type: 'object', properties: { ...sessionIdProp } },
   },
 
   // ── Clipboard ──────────────────────────────────────────────
   {
     name: 'browser_clipboard_read',
     description: 'Read text from the clipboard.',
-    inputSchema: { type: 'object', properties: { ...tabIdProp } },
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
   },
   {
     name: 'browser_clipboard_write',
@@ -481,8 +512,21 @@ export const tools: ToolDefinition[] = [
       properties: {
         text: { type: 'string', description: 'Text to write to clipboard' },
         ...tabIdProp,
+        ...sessionIdProp,
       },
       required: ['text'],
     },
+  },
+
+  // ── Session Management ─────────────────────────────────────
+  {
+    name: 'browser_session_list',
+    description: 'List all active browser sessions with their sessionId, port, and connection status.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'browser_session_close_all',
+    description: 'Close all active browser sessions and clean up resources.',
+    inputSchema: { type: 'object', properties: {} },
   },
 ];
