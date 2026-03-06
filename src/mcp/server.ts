@@ -89,7 +89,7 @@ export class AlyBrowserMCPServer {
 
   constructor() {
     this.server = new Server(
-      { name: 'aly-browser', version: '0.4.0' },
+      { name: 'aly-browser', version: '0.4.2' },
       {
         capabilities: { tools: {} },
         instructions: INSTRUCTIONS,
@@ -184,7 +184,6 @@ export class AlyBrowserMCPServer {
       case 'browser_launch':
         return this.handleLaunch(args);
       case 'browser_navigate':
-      case 'browser_goto':
         return this.handleNavigate(args);
       case 'browser_back':
         return this.handleBack(args);
@@ -197,7 +196,6 @@ export class AlyBrowserMCPServer {
       case 'browser_snapshot':
         return this.handleSnapshot(args);
       case 'browser_html':
-      case 'browser_markdown':
         return this.handleHTML(args);
       case 'browser_eval':
         return this.handleEval(args);
@@ -824,8 +822,9 @@ export class AlyBrowserMCPServer {
   }
 
   private registerCleanup(): void {
-    const onExit = () => {
-      this.cleanupAll().catch(() => {});
+    const onExit = async () => {
+      await this.cleanupAll().catch(() => {});
+      process.exit(0);
     };
     process.on('SIGINT', onExit);
     process.on('SIGTERM', onExit);

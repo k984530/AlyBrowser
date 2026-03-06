@@ -30,7 +30,7 @@ async function handleCommand(cmd) {
     case 'scrollBy': return handleScroll(cmd.params);
     case 'waitForSelector': return handleWaitForSelector(cmd.params);
     case 'waitForStable': return handleWaitForStable(cmd.params);
-    case 'getHTML': return document.body?.innerHTML || '';
+    case 'getHTML': return document.documentElement?.outerHTML || '';
     default: throw new Error(`Unknown content action: ${cmd.action}`);
   }
 }
@@ -227,10 +227,17 @@ function handleType(params) {
     el.scrollIntoView({ block: 'center', behavior: 'instant' });
     el.focus();
 
-    // Clear with Selection API (select() doesn't exist on divs)
-    const sel = window.getSelection();
-    sel.selectAllChildren(el);
-    sel.deleteFromDocument();
+    if (params.clear) {
+      // Clear with Selection API (select() doesn't exist on divs)
+      const sel = window.getSelection();
+      sel.selectAllChildren(el);
+      sel.deleteFromDocument();
+    } else {
+      // Move cursor to end for appending
+      const sel = window.getSelection();
+      sel.selectAllChildren(el);
+      sel.collapseToEnd();
+    }
 
     // Insert text via execCommand — triggers framework's input listeners
     document.execCommand('insertText', false, params.text);
@@ -258,7 +265,7 @@ function handleType(params) {
   el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
 
   // Clear existing content
-  if (params.clear || true) {
+  if (params.clear) {
     el.select?.();
     document.execCommand('selectAll', false, null);
     document.execCommand('delete', false, null);

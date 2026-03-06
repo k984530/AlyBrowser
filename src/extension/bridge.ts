@@ -200,6 +200,11 @@ export class ExtensionBridge {
 
       ws.on('close', () => {
         this.ws = null;
+        // Reject all pending requests — they can't be delivered
+        for (const [id, d] of this.pending) {
+          d.reject(new Error('Extension disconnected'));
+        }
+        this.pending.clear();
       });
     });
 
@@ -451,5 +456,7 @@ export class ExtensionBridge {
     // Clean up session metadata files (keep profile for persistence)
     try { fs.unlinkSync(path.join(this._sessionDir, 'port')); } catch {}
     try { fs.unlinkSync(path.join(this._sessionDir, 'pid')); } catch {}
+    // Clean up extension copy (port-specific, recreated on next launch)
+    try { fs.rmSync(this._extensionCopyDir, { recursive: true, force: true }); } catch {}
   }
 }
