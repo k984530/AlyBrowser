@@ -61,7 +61,7 @@ await sessionB.launch({ url: 'https://instagram.com' });
 // Each has independent login state
 ```
 
-## MCP Tools (32)
+## MCP Tools (42)
 
 | Category | Tools |
 |----------|-------|
@@ -73,7 +73,7 @@ await sessionB.launch({ url: 'https://instagram.com' });
 | Cookies | `browser_cookie_get`, `browser_cookie_set`, `browser_cookie_delete` |
 | Storage | `browser_storage_get`, `browser_storage_set` |
 | Bookmarks | `browser_bookmark_list`, `browser_bookmark_create`, `browser_bookmark_delete` |
-| Alarms | `browser_alarm_create`, `browser_alarm_list`, `browser_alarm_clear` |
+| Alarms | `browser_alarm_create`, `browser_alarm_list`, `browser_alarm_clear`, `browser_alarm_events` |
 | Other | `browser_download`, `browser_history_search`, `browser_notify`, `browser_top_sites`, `browser_clipboard_read`, `browser_clipboard_write` |
 | Session | `browser_session_list`, `browser_session_close_all` |
 

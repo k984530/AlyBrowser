@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { spawn, type ChildProcess } from 'child_process';
-import { findChrome } from '../chrome/finder';
+import { spawn, execSync, type ChildProcess } from 'child_process';
+import { findChromeForTesting } from '../chrome/finder';
 import { Deferred } from '../utils/deferred';
 import { Logger } from '../utils/logger';
 import * as path from 'path';
@@ -106,10 +106,20 @@ export class ExtensionBridge {
         if (file === 'background.js') {
           // Inject port into background.js
           let content = fs.readFileSync(src, 'utf-8');
-          content = content.replace(
-            /const WS_PORT = \d+;/,
-            `const WS_PORT = ${this._port};`,
-          );
+          const marker = /const WS_PORT = \d+;/;
+          if (!marker.test(content)) {
+            log.warn('background.js missing WS_PORT marker — extension may connect to wrong port');
+          }
+          content = content.replace(marker, `const WS_PORT = ${this._port};`);
+          fs.writeFileSync(dest, content);
+        } else if (file === 'manifest.json') {
+          // Bump version on each launch to force Chrome to reload the service worker
+          // (Chrome caches MV3 service workers in the profile — stale cache uses wrong port)
+          // Chrome version format: up to 4 dot-separated integers, each 0-65535
+          let content = fs.readFileSync(src, 'utf-8');
+          const n = Date.now() % 65535;
+          const ts = `1.0.${n}.${Math.floor(Math.random() * 65535)}`;
+          content = content.replace(/"version":\s*"[^"]*"/, `"version": "${ts}"`);
           fs.writeFileSync(dest, content);
         } else {
           fs.copyFileSync(src, dest);
@@ -119,8 +129,16 @@ export class ExtensionBridge {
   }
 
   private launchChrome(): void {
-    const chromePath = findChrome();
+    const chromePath = findChromeForTesting();
     fs.mkdirSync(this._profileDir, { recursive: true });
+
+    // macOS: remove quarantine/provenance flags that block extension loading
+    if (process.platform === 'darwin') {
+      try {
+        const appBundle = chromePath.replace(/\/Contents\/MacOS\/.*$/, '');
+        execSync(`xattr -c "${appBundle}"`, { stdio: 'ignore' });
+      } catch {}
+    }
 
     const flags = [
       `--user-data-dir=${this._profileDir}`,
@@ -129,6 +147,8 @@ export class ExtensionBridge {
       '--no-first-run',
       '--disable-popup-blocking',
       '--window-size=1280,720',
+      // Prevent PerfettoTrace crash on macOS 26 (Tahoe) with Chrome for Testing
+      '--disable-features=PerfettoSystemTracing',
     ];
 
     if (fs.existsSync(path.join(this._extensionCopyDir, 'manifest.json'))) {
@@ -137,8 +157,12 @@ export class ExtensionBridge {
 
     log.debug('Launch:', chromePath, 'session:', this._sessionId, 'port:', this._port);
     this.chromeProcess = spawn(chromePath, flags, {
-      stdio: ['pipe', 'pipe', 'pipe'],
+      // Detach Chrome so it survives parent process exit (MCP server restart, script end)
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
+    // Allow Node.js to exit without waiting for Chrome
+    this.chromeProcess.unref();
 
     this.chromeProcess.on('exit', () => {
       this.chromeProcess = null;
@@ -169,20 +193,35 @@ export class ExtensionBridge {
 
   private waitForExtension(): Promise<void> {
     const deferred = new Deferred<void>();
-    const timeout = setTimeout(
-      () => deferred.reject(new Error('Extension connect timeout (30s)')),
-      30_000,
-    );
+    let settled = false;
 
-    this.wss!.on('connection', (ws) => {
+    const timeout = setTimeout(() => {
+      settled = true;
+      deferred.reject(new Error('Extension connect timeout (30s)'));
+    }, 30_000);
+
+    const onConnection = (ws: WebSocket) => {
+      if (settled) {
+        // Timeout already fired — reject late connection
+        ws.close();
+        return;
+      }
+
       log.debug('Extension connected (session:', this._sessionId, ')');
       this.ws = ws;
 
       ws.on('message', (data) => {
-        const msg = JSON.parse(data.toString());
+        let msg: Record<string, unknown>;
+        try {
+          msg = JSON.parse(data.toString());
+        } catch {
+          log.warn('Malformed message from extension:', data.toString().slice(0, 100));
+          return;
+        }
 
         if (msg.type === 'ready') {
           log.debug('Extension ready, tab:', msg.tabId);
+          settled = true;
           clearTimeout(timeout);
           deferred.resolve();
           return;
@@ -190,10 +229,10 @@ export class ExtensionBridge {
         if (msg.type === 'ping' || msg.type === 'alarm') return;
 
         if (msg.id !== undefined) {
-          const p = this.pending.get(msg.id);
+          const p = this.pending.get(msg.id as number);
           if (p) {
-            this.pending.delete(msg.id);
-            msg.error ? p.reject(new Error(msg.error)) : p.resolve(msg.result);
+            this.pending.delete(msg.id as number);
+            msg.error ? p.reject(new Error(msg.error as string)) : p.resolve(msg.result);
           }
         }
       });
@@ -201,12 +240,14 @@ export class ExtensionBridge {
       ws.on('close', () => {
         this.ws = null;
         // Reject all pending requests — they can't be delivered
-        for (const [id, d] of this.pending) {
+        for (const [, d] of this.pending) {
           d.reject(new Error('Extension disconnected'));
         }
         this.pending.clear();
       });
-    });
+    };
+
+    this.wss!.on('connection', onConnection);
 
     return deferred.promise;
   }
@@ -219,7 +260,13 @@ export class ExtensionBridge {
     const id = this.nextId++;
     const deferred = new Deferred<unknown>();
     this.pending.set(id, deferred);
-    this.ws.send(JSON.stringify({ id, action, params }));
+
+    try {
+      this.ws.send(JSON.stringify({ id, action, params }));
+    } catch (err) {
+      this.pending.delete(id);
+      throw err;
+    }
 
     const timer = setTimeout(() => {
       this.pending.delete(id);
@@ -439,10 +486,15 @@ export class ExtensionBridge {
     }
 
     if (this.chromeProcess && !this.chromeProcess.killed) {
-      this.chromeProcess.kill('SIGTERM');
+      // Kill the detached process group (negative PID kills the entire group)
+      try { process.kill(-this.chromeProcess.pid!, 'SIGTERM'); } catch {
+        this.chromeProcess.kill('SIGTERM');
+      }
       await new Promise<void>((resolve) => {
         const t = setTimeout(() => {
-          this.chromeProcess?.kill('SIGKILL');
+          try { process.kill(-this.chromeProcess!.pid!, 'SIGKILL'); } catch {
+            this.chromeProcess?.kill('SIGKILL');
+          }
           resolve();
         }, 5000);
         this.chromeProcess!.on('exit', () => {

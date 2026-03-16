@@ -196,11 +196,20 @@ async function handleCommand(cmd) {
 
 // ── Navigation ──────────────────────────────────────────────
 
+function isContentScriptUrl(url) {
+  try {
+    return /^https?:\/\//i.test(url);
+  } catch { return false; }
+}
+
 async function handleNavigate(params, tabId) {
   const target = tabId || activeTabId;
   contentReady.delete(target);
   await chrome.tabs.update(target, { url: params.url });
-  await waitForContentScript(target, 30000);
+  // Content scripts only run on http/https pages — skip wait for other schemes
+  if (isContentScriptUrl(params.url)) {
+    await waitForContentScript(target, 30000);
+  }
   return { ok: true, url: params.url };
 }
 
@@ -230,12 +239,16 @@ async function handleEvaluate(params, tabId) {
       const results = await chrome.scripting.executeScript({
         target: { tabId: target },
         world,
-        func: (expr) => {
+        func: async (expr) => {
           try {
-            const r = (0, eval)(expr); // indirect eval
-            if (r === undefined) return { ok: true, value: null };
+            let r = (0, eval)(expr); // indirect eval
+            // Await Promises so async expressions (fetch, etc.) return resolved values
+            if (r && typeof r === 'object' && typeof r.then === 'function') {
+              r = await r;
+            }
+            if (r === undefined || r === null) return { ok: true, value: null };
             if (typeof r === 'function') return { ok: true, value: r.toString() };
-            if (typeof r === 'object' && r !== null) {
+            if (typeof r === 'object') {
               try { return { ok: true, value: JSON.parse(JSON.stringify(r)) }; }
               catch { return { ok: true, value: String(r) }; }
             }
@@ -270,9 +283,10 @@ async function handleTabList() {
 }
 
 async function handleTabNew(params) {
-  const tab = await chrome.tabs.create({ url: params.url || 'about:blank' });
+  const url = params.url || 'about:blank';
+  const tab = await chrome.tabs.create({ url });
   activeTabId = tab.id;
-  if (params.url && params.url !== 'about:blank') {
+  if (isContentScriptUrl(url)) {
     await waitForContentScript(tab.id, 30000).catch(() => {});
   }
   return { tabId: tab.id, url: tab.url };
@@ -394,10 +408,12 @@ async function handleAlarmCreate(params) {
 
 async function handleAlarmList() {
   const alarms = await chrome.alarms.getAll();
-  return alarms.map(a => ({
-    name: a.name, scheduledTime: a.scheduledTime,
-    periodInMinutes: a.periodInMinutes,
-  }));
+  return alarms
+    .filter(a => a.name !== 'aly-reconnect')
+    .map(a => ({
+      name: a.name, scheduledTime: a.scheduledTime,
+      periodInMinutes: a.periodInMinutes,
+    }));
 }
 
 async function handleAlarmClear(params) {

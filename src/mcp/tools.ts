@@ -134,7 +134,7 @@ export const tools: ToolDefinition[] = [
   // ── Page Interaction ──────────────────────────────────────
   {
     name: 'browser_click',
-    description: 'Click an element by its @eN ref ID.',
+    description: 'Click an element by its @eN ref ID. Returns updated snapshot automatically — no need to call browser_snapshot afterward.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -147,7 +147,7 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: 'browser_type',
-    description: 'Type text into an input element.',
+    description: 'Type text into an input element. Supports special keys: {Enter}, {Tab}, {Escape}, {Backspace}, {Space}, {ArrowDown}, {ArrowUp}. Returns updated snapshot.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -395,6 +395,12 @@ export const tools: ToolDefinition[] = [
         ...sessionIdProp,
       },
     },
+  },
+
+  {
+    name: 'browser_alarm_events',
+    description: 'Get fired alarm events since last poll. Returns an array of events with name, scheduledTime, and firedAt timestamps, then clears the buffer.',
+    inputSchema: { type: 'object', properties: { ...sessionIdProp } },
   },
 
   // ── Storage ───────────────────────────────────────────────

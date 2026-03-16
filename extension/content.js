@@ -96,7 +96,8 @@ function isInteractive(el) {
   const role = el.getAttribute('role');
   if (role && ['button', 'link', 'tab', 'menuitem', 'checkbox', 'radio',
     'switch', 'slider', 'textbox', 'combobox', 'option', 'treeitem',
-    'menuitemcheckbox', 'menuitemradio', 'searchbox'].includes(role)) return true;
+    'menuitemcheckbox', 'menuitemradio', 'searchbox',
+    'spinbutton', 'scrollbar'].includes(role)) return true;
   if (el.onclick || el.getAttribute('onclick')) return true;
   const ti = el.getAttribute('tabindex');
   if (ti !== null && ti !== '-1') return true;
@@ -135,12 +136,36 @@ function getRole(el) {
 }
 
 function getLabel(el) {
-  // For inputs, show current value if present (not just placeholder)
   const tag = el.tagName?.toLowerCase();
-  if ((tag === 'input' || tag === 'textarea') && el.value) {
-    return el.value.substring(0, 120);
+  const parts = [];
+
+  // Value display for form elements
+  if (tag === 'input') {
+    const type = (el.type || 'text').toLowerCase();
+    if (type === 'checkbox' || type === 'radio') {
+      parts.push(el.checked ? 'checked' : 'unchecked');
+    } else if (el.value) {
+      parts.push(el.value.substring(0, 100));
+    }
+  } else if (tag === 'textarea' && el.value) {
+    parts.push(el.value.substring(0, 100));
+  } else if (tag === 'select') {
+    const selected = el.options?.[el.selectedIndex];
+    if (selected) parts.push(selected.text?.substring(0, 80) || el.value);
   }
 
+  // State indicators
+  const states = [];
+  if (el.disabled) states.push('disabled');
+  if (el.readOnly) states.push('readonly');
+  if (el.required || el.getAttribute('aria-required') === 'true') states.push('required');
+  if (el.getAttribute('aria-invalid') === 'true') states.push('invalid');
+  if (states.length) parts.push(`[${states.join(',')}]`);
+
+  // If we have parts, return them
+  if (parts.length) return parts.join(' ');
+
+  // Fallback to text labels
   return (
     el.getAttribute('aria-label')?.substring(0, 120) ||
     el.getAttribute('alt')?.substring(0, 120) ||
@@ -175,7 +200,7 @@ function isVisible(el) {
 
 function handleClick(ref) {
   const el = refMap.get(ref);
-  if (!el) throw new Error(`Element ${ref} not found. Call browser_snapshot first.`);
+  if (!el) throw new Error(`Element ${ref} not found — page may have changed. Call browser_snapshot to get fresh ref IDs.`);
 
   el.scrollIntoView({ block: 'center', behavior: 'instant' });
 
@@ -200,7 +225,7 @@ function handleClick(ref) {
 
 function handleType(params) {
   let el = refMap.get(params.ref);
-  if (!el) throw new Error(`Element ${params.ref} not found.`);
+  if (!el) throw new Error(`Element ${params.ref} not found — page may have changed. Call browser_snapshot to get fresh ref IDs.`);
 
   // ── Special key sequences: {Enter}, {Tab}, {Escape}, {Backspace} ──
   const keyMatch = params.text.match(/^\{(\w+)\}$/);
@@ -255,7 +280,11 @@ function handleType(params) {
     const fallback = document.querySelector(
       'input[type="email"], input[type="text"], input[type="password"], input:not([type]), textarea'
     );
-    if (fallback) el = fallback;
+    if (fallback) {
+      el = fallback;
+    } else {
+      throw new Error(`Element ${params.ref} is not a text input and no fallback input found.`);
+    }
   }
 
   // Focus the element with full event sequence
@@ -275,7 +304,8 @@ function handleType(params) {
   const ok = document.execCommand('insertText', false, params.text);
 
   // If execCommand fails, fall back to native setter
-  if (!ok || !el.value) {
+  if (!ok) {
+    const newValue = params.clear ? params.text : (el.value || '') + params.text;
     const nativeSetter = Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype, 'value'
     )?.set || Object.getOwnPropertyDescriptor(
@@ -283,9 +313,9 @@ function handleType(params) {
     )?.set;
 
     if (nativeSetter) {
-      nativeSetter.call(el, params.text);
+      nativeSetter.call(el, newValue);
     } else {
-      el.value = params.text;
+      el.value = newValue;
     }
     el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: params.text }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -296,11 +326,12 @@ function handleType(params) {
 
 function handleSelect(params) {
   const el = refMap.get(params.ref);
-  if (!el) throw new Error(`Element ${params.ref} not found.`);
+  if (!el) throw new Error(`Element ${params.ref} not found — page may have changed. Call browser_snapshot to get fresh ref IDs.`);
 
   el.value = params.value;
   el.dispatchEvent(new Event('change', { bubbles: true }));
-  return { ok: true };
+  const selected = el.options?.[el.selectedIndex];
+  return { ok: true, value: el.value, text: selected?.text };
 }
 
 function handleHover(ref) {

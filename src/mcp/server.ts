@@ -57,12 +57,14 @@ Knowledge is automatically attached:
 The more you record, the fewer mistakes you repeat. Always check knowledge before trying complex site interactions.`;
 
 const AUTO_LEARN_TOOLS = new Set([
-  'browser_navigate', 'browser_click', 'browser_type', 'browser_select',
+  'browser_navigate', 'browser_back', 'browser_forward',
+  'browser_click', 'browser_type', 'browser_select',
   'browser_hover', 'browser_scroll', 'browser_wait', 'browser_wait_for_stable',
   'browser_eval', 'browser_snapshot',
 ]);
 
 interface ToolResult {
+  [key: string]: unknown;
   content: Array<{ type: 'text'; text: string }>;
   isError?: boolean;
 }
@@ -81,6 +83,7 @@ function jsonResult(data: unknown): ToolResult {
 
 export class AlyBrowserMCPServer {
   private sessions = new Map<string, ExtensionBridge>();
+  private launching = new Set<string>();
   private siteKnowledge = new SiteKnowledge();
   private recentFailures = new Map<string, Set<string>>();
   private knowledgeShownPaths = new Set<string>();
@@ -249,6 +252,8 @@ export class AlyBrowserMCPServer {
         return this.handleAlarmList(args);
       case 'browser_alarm_clear':
         return this.handleAlarmClear(args);
+      case 'browser_alarm_events':
+        return this.handleAlarmEvents(args);
 
       // Storage
       case 'browser_storage_get':
@@ -304,6 +309,11 @@ export class AlyBrowserMCPServer {
   private async handleLaunch(args: Record<string, unknown>): Promise<ToolResult> {
     const sessionId = this.getSessionId(args);
 
+    // Prevent concurrent launches for the same session
+    if (this.launching.has(sessionId)) {
+      return errorResult(`Session "${sessionId}" is already launching. Please wait.`);
+    }
+
     // Reuse existing session if connected
     const existing = this.sessions.get(sessionId);
     if (existing?.isConnected) {
@@ -319,8 +329,16 @@ export class AlyBrowserMCPServer {
       this.sessions.delete(sessionId);
     }
 
+    this.launching.add(sessionId);
     const bridge = new ExtensionBridge(sessionId);
-    await bridge.launch({ url: args.url as string | undefined });
+    try {
+      await bridge.launch({ url: args.url as string | undefined });
+    } catch (err) {
+      await bridge.close().catch(() => {});
+      this.launching.delete(sessionId);
+      throw err;
+    }
+    this.launching.delete(sessionId);
     this.sessions.set(sessionId, bridge);
 
     if (args.url) {
@@ -330,6 +348,8 @@ export class AlyBrowserMCPServer {
       const prefix = knowledge ? `${knowledge}\n\n` : '';
       this.knowledgeShownPaths.add(kKey);
       this.lastUrlPerTab.set(this.tabKey(sessionId, 0), url);
+      // Wait for page to stabilize after initial navigation
+      await bridge.waitForStable({ timeout: 5000, stableMs: 500 }).catch(() => {});
       const snapshot = await bridge.snapshot();
       return textResult(
         `Browser launched → ${url} (session: ${sessionId}, port: ${bridge.port})\n\n${prefix}${snapshot}`,
@@ -599,6 +619,11 @@ export class AlyBrowserMCPServer {
     return textResult('Alarm cleared.');
   }
 
+  private async handleAlarmEvents(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    return jsonResult(await bridge.alarmEvents());
+  }
+
   // ── Storage ──────────────────────────────────────────────────
 
   private async handleStorageGet(args: Record<string, unknown>): Promise<ToolResult> {
@@ -821,12 +846,23 @@ export class AlyBrowserMCPServer {
     this.sessions.clear();
   }
 
+  private _onExit: (() => Promise<void>) | null = null;
+
   private registerCleanup(): void {
-    const onExit = async () => {
+    this._onExit = async () => {
       await this.cleanupAll().catch(() => {});
       process.exit(0);
     };
-    process.on('SIGINT', onExit);
-    process.on('SIGTERM', onExit);
+    process.on('SIGINT', this._onExit);
+    process.on('SIGTERM', this._onExit);
+  }
+
+  /** Remove process signal listeners. Call when discarding this instance. */
+  dispose(): void {
+    if (this._onExit) {
+      process.removeListener('SIGINT', this._onExit);
+      process.removeListener('SIGTERM', this._onExit);
+      this._onExit = null;
+    }
   }
 }
