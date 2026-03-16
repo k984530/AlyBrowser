@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { ChromeNotFoundError } from '../errors';
@@ -111,6 +112,68 @@ export function findChromeForTesting(projectRoot?: string): string {
     } catch {}
   }
 
-  // 3. Fall back to regular Chrome
+  // 3. Auto-install Chrome for Testing in ~/.aly-browser/chrome
+  const globalChromeDir = path.join(os.homedir(), '.aly-browser');
+  const installed = autoInstallChromeForTesting(globalChromeDir);
+  if (installed) return installed;
+
+  // 4. Fall back to regular Chrome (--load-extension may not work)
   return findChrome();
+}
+
+/**
+ * Auto-install Chrome for Testing via npx @puppeteer/browsers.
+ * Installs once to ~/.aly-browser/chrome and reuses on subsequent calls.
+ */
+function autoInstallChromeForTesting(baseDir: string): string | null {
+  const chromeDir = path.join(baseDir, 'chrome');
+
+  // Check if already installed
+  if (fs.existsSync(chromeDir)) {
+    const found = scanForChromeBinary(chromeDir);
+    if (found) return found;
+  }
+
+  // Install
+  try {
+    fs.mkdirSync(baseDir, { recursive: true });
+    execSync(
+      `npx @puppeteer/browsers install chrome@stable --path "${baseDir}"`,
+      { encoding: 'utf-8', timeout: 120_000, stdio: 'pipe' },
+    );
+    // Remove macOS quarantine
+    if (process.platform === 'darwin') {
+      try { execSync(`xattr -c "${chromeDir}"`, { stdio: 'ignore' }); } catch {}
+    }
+    const found = scanForChromeBinary(chromeDir);
+    if (found) return found;
+  } catch {}
+
+  return null;
+}
+
+function scanForChromeBinary(chromeDir: string): string | null {
+  try {
+    for (const entry of fs.readdirSync(chromeDir)) {
+      const platform = process.platform;
+      let binary: string;
+      if (platform === 'darwin') {
+        for (const arch of ['chrome-mac-arm64', 'chrome-mac-x64']) {
+          binary = path.join(
+            chromeDir, entry, arch,
+            'Google Chrome for Testing.app', 'Contents', 'MacOS',
+            'Google Chrome for Testing',
+          );
+          if (fs.existsSync(binary)) return binary;
+        }
+      } else if (platform === 'linux') {
+        binary = path.join(chromeDir, entry, 'chrome-linux64', 'chrome');
+        if (fs.existsSync(binary)) return binary;
+      } else if (platform === 'win32') {
+        binary = path.join(chromeDir, entry, 'chrome-win64', 'chrome.exe');
+        if (fs.existsSync(binary)) return binary;
+      }
+    }
+  } catch {}
+  return null;
 }
