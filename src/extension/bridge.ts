@@ -40,6 +40,7 @@ export class ExtensionBridge {
   private chromeProcess: ChildProcess | null = null;
   private nextId = 1;
   private pending = new Map<number, Deferred<unknown>>();
+  private _closing = false;
   private _port: number = 0;
   private _sessionId: string;
   private _sessionDir: string;
@@ -92,7 +93,16 @@ export class ExtensionBridge {
   /** Quick check: is an extension already connected (e.g. user's Chrome with extension installed)? */
   private waitForExtensionQuick(timeoutMs: number): Promise<boolean> {
     return new Promise((resolve) => {
-      const timeout = setTimeout(() => resolve(false), timeoutMs);
+      let settled = false;
+      const settle = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        this.wss!.removeListener('connection', onConnection);
+        resolve(value);
+      };
+
+      const timeout = setTimeout(() => settle(false), timeoutMs);
 
       const onConnection = (ws: WebSocket) => {
         this.ws = ws;
@@ -102,16 +112,15 @@ export class ExtensionBridge {
           try { msg = JSON.parse(data.toString()); } catch { return; }
 
           if (msg.type === 'ready') {
-            clearTimeout(timeout);
             this.setupWsHandlers(ws);
-            resolve(true);
+            settle(true);
             return;
           }
         });
 
         ws.on('close', () => {
           this.ws = null;
-          resolve(false);
+          settle(false);
         });
       };
 
@@ -140,11 +149,13 @@ export class ExtensionBridge {
     });
 
     ws.on('close', () => {
+      this._closing = true;
       this.ws = null;
       for (const [, d] of this.pending) {
         d.reject(new Error('Extension disconnected'));
       }
       this.pending.clear();
+      this._closing = false;
     });
   }
 
@@ -264,11 +275,18 @@ export class ExtensionBridge {
     const deferred = new Deferred<void>();
     let settled = false;
 
-    const timeout = setTimeout(() => {
+    const settle = (fn: () => void) => {
+      if (settled) return;
       settled = true;
-      deferred.reject(new Error(
+      clearTimeout(timeout);
+      this.wss!.removeListener('connection', onConnection);
+      fn();
+    };
+
+    const timeout = setTimeout(() => {
+      settle(() => deferred.reject(new Error(
         'Extension connect timeout (30s). If using regular Chrome, install the extension manually at chrome://extensions (Developer mode → Load unpacked → select extension/ folder).',
-      ));
+      )));
     }, 30_000);
 
     const onConnection = (ws: WebSocket) => {
@@ -287,22 +305,16 @@ export class ExtensionBridge {
 
         if (msg.type === 'ready') {
           log.debug('Extension ready, tab:', msg.tabId);
-          settled = true;
-          clearTimeout(timeout);
           ws.removeListener('message', readyHandler);
           this.setupWsHandlers(ws);
-          deferred.resolve();
+          settle(() => deferred.resolve());
         }
       };
       ws.on('message', readyHandler);
 
       ws.on('close', () => {
-        if (!settled) {
-          this.ws = null;
-          settled = true;
-          clearTimeout(timeout);
-          deferred.reject(new Error('Extension disconnected during handshake'));
-        }
+        this.ws = null;
+        settle(() => deferred.reject(new Error('Extension disconnected during handshake')));
       });
     };
 
@@ -312,7 +324,11 @@ export class ExtensionBridge {
   }
 
   async send(action: string, params?: Record<string, unknown>): Promise<unknown> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    if (this._closing) {
+      throw new Error('Extension is closing');
+    }
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
       throw new Error('Extension not connected');
     }
 
@@ -321,7 +337,8 @@ export class ExtensionBridge {
     this.pending.set(id, deferred);
 
     try {
-      this.ws.send(JSON.stringify({ id, action, params }));
+      // Capture ws reference to avoid race with close handler nullifying this.ws
+      ws.send(JSON.stringify({ id, action, params }));
     } catch (err) {
       this.pending.delete(id);
       throw err;
@@ -345,28 +362,28 @@ export class ExtensionBridge {
     await this.send('navigate', { url, tabId });
   }
 
-  async snapshot(tabId?: number): Promise<string> {
-    return (await this.send('snapshot', { tabId })) as string;
+  async snapshot(tabId?: number, frameId?: number): Promise<string> {
+    return (await this.send('snapshot', { tabId, frameId })) as string;
   }
 
-  async click(ref: string, tabId?: number): Promise<void> {
-    await this.send('click', { ref, tabId });
+  async click(ref: string, tabId?: number, frameId?: number): Promise<void> {
+    await this.send('click', { ref, tabId, frameId });
   }
 
   async type(
     ref: string,
     text: string,
-    opts?: { clear?: boolean; tabId?: number },
+    opts?: { clear?: boolean; tabId?: number; frameId?: number },
   ): Promise<void> {
-    await this.send('type', { ref, text, clear: opts?.clear ?? false, tabId: opts?.tabId });
+    await this.send('type', { ref, text, clear: opts?.clear ?? false, tabId: opts?.tabId, frameId: opts?.frameId });
   }
 
-  async selectOption(ref: string, value: string, tabId?: number): Promise<void> {
-    await this.send('select', { ref, value, tabId });
+  async selectOption(ref: string, value: string, tabId?: number, frameId?: number): Promise<void> {
+    await this.send('select', { ref, value, tabId, frameId });
   }
 
-  async hover(ref: string, tabId?: number): Promise<void> {
-    await this.send('hover', { ref, tabId });
+  async hover(ref: string, tabId?: number, frameId?: number): Promise<void> {
+    await this.send('hover', { ref, tabId, frameId });
   }
 
   async evaluate(expression: string, tabId?: number): Promise<unknown> {
@@ -375,23 +392,23 @@ export class ExtensionBridge {
 
   async waitForSelector(
     selector: string,
-    opts?: { timeout?: number; hidden?: boolean; tabId?: number },
+    opts?: { timeout?: number; hidden?: boolean; tabId?: number; frameId?: number },
   ): Promise<void> {
     await this.send('waitForSelector', {
-      selector, timeout: opts?.timeout, hidden: opts?.hidden, tabId: opts?.tabId,
+      selector, timeout: opts?.timeout, hidden: opts?.hidden, tabId: opts?.tabId, frameId: opts?.frameId,
     });
   }
 
   async waitForStable(
-    opts?: { timeout?: number; stableMs?: number; tabId?: number },
+    opts?: { timeout?: number; stableMs?: number; tabId?: number; frameId?: number },
   ): Promise<void> {
     await this.send('waitForStable', {
-      timeout: opts?.timeout, stableMs: opts?.stableMs, tabId: opts?.tabId,
+      timeout: opts?.timeout, stableMs: opts?.stableMs, tabId: opts?.tabId, frameId: opts?.frameId,
     });
   }
 
-  async scrollBy(opts: { x?: number; y?: number; tabId?: number }): Promise<void> {
-    await this.send('scrollBy', { x: opts.x ?? 0, y: opts.y ?? 0, tabId: opts.tabId });
+  async scrollBy(opts: { x?: number; y?: number; tabId?: number; frameId?: number }): Promise<void> {
+    await this.send('scrollBy', { x: opts.x ?? 0, y: opts.y ?? 0, tabId: opts.tabId, frameId: opts.frameId });
   }
 
   async goBack(tabId?: number): Promise<void> {
@@ -402,8 +419,14 @@ export class ExtensionBridge {
     await this.send('goForward', { tabId });
   }
 
-  async getHTML(tabId?: number): Promise<string> {
-    return (await this.send('getHTML', { tabId })) as string;
+  async getHTML(tabId?: number, frameId?: number): Promise<string> {
+    return (await this.send('getHTML', { tabId, frameId })) as string;
+  }
+
+  // ── Frame Management ─────────────────────────────────────────
+
+  async frameList(tabId?: number): Promise<unknown> {
+    return await this.send('frameList', { tabId });
   }
 
   // ── Tab Management ──────────────────────────────────────────

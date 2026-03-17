@@ -6,6 +6,7 @@ let ws = null;
 let activeTabId = null;
 let contentReady = new Map();
 let alarmEvents = [];
+const MAX_ALARM_EVENTS = 100;
 
 // ── WebSocket Connection ────────────────────────────────────
 
@@ -28,6 +29,7 @@ function connect() {
     console.log('[aly] Connected to bridge');
     // Cancel reconnect alarm since we're connected
     chrome.alarms.clear('aly-reconnect');
+    startPingTimer();
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tabs[0]) {
       activeTabId = tabs[0].id;
@@ -58,6 +60,7 @@ function connect() {
 
   ws.onclose = () => {
     connecting = false;
+    stopPingTimer();
     console.log('[aly] Disconnected, scheduling reconnect...');
     scheduleReconnect();
   };
@@ -68,8 +71,10 @@ function connect() {
 }
 
 // Use chrome.alarms for reconnection — survives service worker suspension
+const RECONNECT_INTERVAL_MIN = 0.05; // 3 seconds
+
 function scheduleReconnect() {
-  chrome.alarms.create('aly-reconnect', { periodInMinutes: 0.05 }); // every 3 seconds
+  chrome.alarms.create('aly-reconnect', { periodInMinutes: RECONNECT_INTERVAL_MIN });
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -81,7 +86,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     }
     return;
   }
-  // User-created alarms
+  // User-created alarms (cap buffer to prevent memory leak if never polled)
+  if (alarmEvents.length >= MAX_ALARM_EVENTS) {
+    alarmEvents.shift();
+  }
   alarmEvents.push({
     name: alarm.name,
     scheduledTime: alarm.scheduledTime,
@@ -96,24 +104,40 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 // Keep service worker alive while connected
-setInterval(() => {
-  if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'ping' }));
+let pingTimer = null;
+
+function startPingTimer() {
+  stopPingTimer();
+  pingTimer = setInterval(() => {
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'ping' }));
+    }
+  }, 20000);
+}
+
+function stopPingTimer() {
+  if (pingTimer !== null) {
+    clearInterval(pingTimer);
+    pingTimer = null;
   }
-}, 20000);
+}
 
 // ── Content Script Tracking ─────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.type === 'contentReady' && sender.tab) {
-    contentReady.set(sender.tab.id, true);
+    // Track per-frame readiness: Map<tabId, Set<frameId>>
+    if (!contentReady.has(sender.tab.id)) {
+      contentReady.set(sender.tab.id, new Set());
+    }
+    contentReady.get(sender.tab.id).add(sender.frameId ?? 0);
   }
 });
 
 // ── Tab Lifecycle Cleanup ───────────────────────────────────
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  contentReady.delete(tabId);
+  contentReady.delete(tabId);  // Removes entire Set for this tab
   if (tabId === activeTabId) {
     activeTabId = null;
   }
@@ -125,7 +149,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 async function handleCommand(cmd) {
   const { action, params = {} } = cmd;
-  const tabId = params.tabId;  // Optional tab targeting for parallel work
+  const tabId = params.tabId;    // Optional tab targeting for parallel work
+  const frameId = params.frameId; // Optional frame targeting for iframe access
 
   switch (action) {
     // Navigation
@@ -133,16 +158,19 @@ async function handleCommand(cmd) {
     case 'goBack': return handleGoBack(tabId);
     case 'goForward': return handleGoForward(tabId);
 
-    // Page interaction (content script)
-    case 'snapshot': return sendToContent({ action: 'snapshot' }, tabId);
-    case 'click': return sendToContent({ action: 'click', params }, tabId);
-    case 'type': return sendToContent({ action: 'type', params }, tabId);
-    case 'select': return sendToContent({ action: 'select', params }, tabId);
-    case 'hover': return sendToContent({ action: 'hover', params }, tabId);
-    case 'scrollBy': return sendToContent({ action: 'scrollBy', params }, tabId);
-    case 'waitForSelector': return sendToContent({ action: 'waitForSelector', params }, tabId);
-    case 'waitForStable': return sendToContent({ action: 'waitForStable', params }, tabId);
-    case 'getHTML': return sendToContent({ action: 'getHTML' }, tabId);
+    // Page interaction (content script) — frameId routes to specific iframe
+    case 'snapshot': return sendToContent({ action: 'snapshot' }, tabId, frameId);
+    case 'click': return sendToContent({ action: 'click', params }, tabId, frameId);
+    case 'type': return sendToContent({ action: 'type', params }, tabId, frameId);
+    case 'select': return sendToContent({ action: 'select', params }, tabId, frameId);
+    case 'hover': return sendToContent({ action: 'hover', params }, tabId, frameId);
+    case 'scrollBy': return sendToContent({ action: 'scrollBy', params }, tabId, frameId);
+    case 'waitForSelector': return sendToContent({ action: 'waitForSelector', params }, tabId, frameId);
+    case 'waitForStable': return sendToContent({ action: 'waitForStable', params }, tabId, frameId);
+    case 'getHTML': return sendToContent({ action: 'getHTML' }, tabId, frameId);
+
+    // Frame management
+    case 'frameList': return handleFrameList(tabId);
 
     // JavaScript
     case 'evaluate': return handleEvaluate(params, tabId);
@@ -354,10 +382,17 @@ async function handleDownload(params) {
         return;
       }
 
+      let settled = false;
+      const cleanup = () => {
+        chrome.downloads.onChanged.removeListener(onChanged);
+        clearTimeout(timer);
+      };
+
       function onChanged(delta) {
-        if (delta.id !== downloadId) return;
+        if (delta.id !== downloadId || settled) return;
         if (delta.state?.current === 'complete') {
-          chrome.downloads.onChanged.removeListener(onChanged);
+          settled = true;
+          cleanup();
           chrome.downloads.search({ id: downloadId }, (results) => {
             resolve({
               id: downloadId, filename: results[0]?.filename,
@@ -365,15 +400,18 @@ async function handleDownload(params) {
             });
           });
         } else if (delta.state?.current === 'interrupted') {
-          chrome.downloads.onChanged.removeListener(onChanged);
+          settled = true;
+          cleanup();
           reject(new Error(`Download failed: ${delta.error?.current || 'unknown'}`));
         }
       }
       chrome.downloads.onChanged.addListener(onChanged);
 
       // 5 min timeout
-      setTimeout(() => {
-        chrome.downloads.onChanged.removeListener(onChanged);
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
         resolve({ id: downloadId, state: 'in_progress' });
       }, 300000);
     });
@@ -517,11 +555,24 @@ async function handleClipboardWrite(params, tabId) {
   return { ok: true };
 }
 
+// ── Frames ──────────────────────────────────────────────────
+
+async function handleFrameList(tabId) {
+  const target = tabId || activeTabId;
+  const frames = await chrome.webNavigation.getAllFrames({ tabId: target });
+  return frames.map(f => ({
+    frameId: f.frameId,
+    parentFrameId: f.parentFrameId,
+    url: f.url,
+  }));
+}
+
 // ── Helpers ─────────────────────────────────────────────────
 
-function waitForContentScript(tabId, timeoutMs = 30000) {
+function waitForContentScript(tabId, timeoutMs = 30000, frameId = 0) {
   return new Promise((resolve, reject) => {
-    if (contentReady.get(tabId)) { resolve(); return; }
+    const frames = contentReady.get(tabId);
+    if (frames?.has(frameId)) { resolve(); return; }
 
     let settled = false;
     const settle = (fn) => { if (!settled) { settled = true; fn(); } };
@@ -532,7 +583,8 @@ function waitForContentScript(tabId, timeoutMs = 30000) {
     }), timeoutMs);
 
     function listener(msg, sender) {
-      if (msg.type === 'contentReady' && sender.tab?.id === tabId) {
+      if (msg.type === 'contentReady' && sender.tab?.id === tabId &&
+          (sender.frameId ?? 0) === frameId) {
         settle(() => {
           chrome.runtime.onMessage.removeListener(listener);
           clearTimeout(timeout);
@@ -543,7 +595,8 @@ function waitForContentScript(tabId, timeoutMs = 30000) {
     chrome.runtime.onMessage.addListener(listener);
 
     // Re-check after registration to cover the gap between initial check and addListener
-    if (contentReady.get(tabId)) {
+    const framesRecheck = contentReady.get(tabId);
+    if (framesRecheck?.has(frameId)) {
       settle(() => {
         chrome.runtime.onMessage.removeListener(listener);
         clearTimeout(timeout);
@@ -553,7 +606,7 @@ function waitForContentScript(tabId, timeoutMs = 30000) {
   });
 }
 
-function sendToContent(cmd, tabId) {
+function sendToContent(cmd, tabId, frameId) {
   const targetTab = tabId || activeTabId;
   return new Promise((resolve, reject) => {
     if (!targetTab) { reject(new Error('No active tab')); return; }
@@ -562,7 +615,10 @@ function sendToContent(cmd, tabId) {
       reject(new Error('Content script response timeout'));
     }, 30000);
 
-    chrome.tabs.sendMessage(targetTab, cmd, (response) => {
+    // frameId: 0 = main frame, >0 = specific iframe
+    const opts = frameId !== undefined ? { frameId } : {};
+
+    chrome.tabs.sendMessage(targetTab, cmd, opts, (response) => {
       clearTimeout(timeout);
       if (chrome.runtime.lastError) {
         reject(new Error(chrome.runtime.lastError.message));

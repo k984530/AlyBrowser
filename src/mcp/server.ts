@@ -94,7 +94,7 @@ export class AlyBrowserMCPServer {
 
   constructor() {
     this.server = new Server(
-      { name: 'aly-browser', version: '0.4.2' },
+      { name: 'aly-browser', version: process.env.npm_package_version || '0.4.2' },
       {
         capabilities: { tools: {} },
         instructions: INSTRUCTIONS,
@@ -122,6 +122,12 @@ export class AlyBrowserMCPServer {
 
   private getBridge(args: Record<string, unknown>): ExtensionBridge {
     return this.getSession(this.getSessionId(args));
+  }
+
+  private requireString(args: Record<string, unknown>, key: string): string {
+    const val = args[key];
+    if (typeof val !== 'string' || !val) throw new Error(`"${key}" must be a non-empty string`);
+    return val;
   }
 
   private ensureConnected(args: Record<string, unknown>): ExtensionBridge {
@@ -230,6 +236,10 @@ export class AlyBrowserMCPServer {
         return this.handleTabClose(args);
       case 'browser_tab_switch':
         return this.handleTabSwitch(args);
+
+      // Frames
+      case 'browser_frame_list':
+        return this.handleFrameList(args);
 
       // Cookies
       case 'browser_cookie_get':
@@ -388,6 +398,7 @@ export class AlyBrowserMCPServer {
     this.lastUrlPerTab.set(this.tabKey(sessionId, tabId), url);
 
     await bridge.navigate(url, tabId);
+    await bridge.waitForStable({ timeout: 5000, stableMs: 500, tabId }).catch(() => {});
     const snap = await bridge.snapshot(tabId);
     return textResult(`${prefix}${snap}`);
   }
@@ -430,7 +441,8 @@ export class AlyBrowserMCPServer {
     const sessionId = this.getSessionId(args);
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
-    const snap = await bridge.snapshot(tabId);
+    const frameId = args.frameId as number | undefined;
+    const snap = await bridge.snapshot(tabId, frameId);
 
     const url = await this.getCurrentUrl(sessionId, tabId);
     if (url) {
@@ -455,7 +467,8 @@ export class AlyBrowserMCPServer {
   private async handleHTML(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
-    return textResult(await bridge.getHTML(tabId));
+    const frameId = args.frameId as number | undefined;
+    return textResult(await bridge.getHTML(tabId, frameId));
   }
 
   private async handleEval(args: Record<string, unknown>): Promise<ToolResult> {
@@ -472,40 +485,44 @@ export class AlyBrowserMCPServer {
 
   private async handleClick(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
-    const ref = args.ref as string;
+    const ref = this.requireString(args, 'ref');
     const tabId = args.tabId as number | undefined;
-    await bridge.click(ref, tabId);
-    const snap = await bridge.snapshot(tabId);
+    const frameId = args.frameId as number | undefined;
+    await bridge.click(ref, tabId, frameId);
+    const snap = await bridge.snapshot(tabId, frameId);
     return textResult(`Clicked ${ref}\n\n${snap}`);
   }
 
   private async handleType(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
-    const ref = args.ref as string;
-    const text = args.text as string;
+    const ref = this.requireString(args, 'ref');
+    const text = this.requireString(args, 'text');
     const clear = (args.clear as boolean) ?? false;
     const tabId = args.tabId as number | undefined;
-    await bridge.type(ref, text, { clear, tabId });
-    const snap = await bridge.snapshot(tabId);
+    const frameId = args.frameId as number | undefined;
+    await bridge.type(ref, text, { clear, tabId, frameId });
+    const snap = await bridge.snapshot(tabId, frameId);
     return textResult(`Typed "${text}" → ${ref}\n\n${snap}`);
   }
 
   private async handleSelect(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
-    const ref = args.ref as string;
-    const value = args.value as string;
+    const ref = this.requireString(args, 'ref');
+    const value = this.requireString(args, 'value');
     const tabId = args.tabId as number | undefined;
-    await bridge.selectOption(ref, value, tabId);
-    const snap = await bridge.snapshot(tabId);
+    const frameId = args.frameId as number | undefined;
+    await bridge.selectOption(ref, value, tabId, frameId);
+    const snap = await bridge.snapshot(tabId, frameId);
     return textResult(`Selected "${value}" in ${ref}\n\n${snap}`);
   }
 
   private async handleHover(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
-    const ref = args.ref as string;
+    const ref = this.requireString(args, 'ref');
     const tabId = args.tabId as number | undefined;
-    await bridge.hover(ref, tabId);
-    const snap = await bridge.snapshot(tabId);
+    const frameId = args.frameId as number | undefined;
+    await bridge.hover(ref, tabId, frameId);
+    const snap = await bridge.snapshot(tabId, frameId);
     return textResult(`Hovered ${ref}\n\n${snap}`);
   }
 
@@ -514,18 +531,20 @@ export class AlyBrowserMCPServer {
     const x = (args.x as number) ?? 0;
     const y = (args.y as number) ?? 0;
     const tabId = args.tabId as number | undefined;
-    await bridge.scrollBy({ x, y, tabId });
-    const snap = await bridge.snapshot(tabId);
+    const frameId = args.frameId as number | undefined;
+    await bridge.scrollBy({ x, y, tabId, frameId });
+    const snap = await bridge.snapshot(tabId, frameId);
     return textResult(`Scrolled (${x}, ${y})\n\n${snap}`);
   }
 
   private async handleWait(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
-    const selector = args.selector as string;
+    const selector = this.requireString(args, 'selector');
     const timeout = args.timeout as number | undefined;
     const hidden = (args.hidden as boolean) ?? false;
     const tabId = args.tabId as number | undefined;
-    await bridge.waitForSelector(selector, { timeout, hidden, tabId });
+    const frameId = args.frameId as number | undefined;
+    await bridge.waitForSelector(selector, { timeout, hidden, tabId, frameId });
     return textResult(hidden
       ? `Element "${selector}" disappeared.`
       : `Element "${selector}" found.`);
@@ -536,8 +555,15 @@ export class AlyBrowserMCPServer {
     const timeout = args.timeout as number | undefined;
     const stableMs = 500;
     const tabId = args.tabId as number | undefined;
-    await bridge.waitForStable({ timeout, stableMs, tabId });
+    const frameId = args.frameId as number | undefined;
+    await bridge.waitForStable({ timeout, stableMs, tabId, frameId });
     return textResult('DOM stabilized.');
+  }
+
+  private async handleFrameList(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    return jsonResult(await bridge.frameList(tabId));
   }
 
   // ── Tab Management ───────────────────────────────────────────
@@ -860,7 +886,7 @@ export class AlyBrowserMCPServer {
     return {
       content: [
         { type: 'text', text: `Screenshot saved: ${filePath}` },
-        { type: 'image', data: fs.readFileSync(filePath).toString('base64'), mimeType: 'image/png' } as any,
+        { type: 'text', text: `data:image/png;base64,${fs.readFileSync(filePath).toString('base64')}` },
       ],
     };
   }

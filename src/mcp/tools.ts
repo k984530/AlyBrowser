@@ -12,6 +12,10 @@ const tabIdProp = {
   tabId: { type: 'number', description: 'Target tab ID (default: active tab). Use for multi-tab parallel work.' },
 };
 
+const frameIdProp = {
+  frameId: { type: 'number', description: 'Target frame ID (default: 0 = main frame). Use browser_frame_list to discover iframe frameIds.' },
+};
+
 const sessionIdProp = {
   sessionId: { type: 'string', description: 'Browser session ID (default: "default"). Use different sessionIds for isolated browser instances with separate cookies/profiles — required for multi-account scenarios (e.g., multiple Instagram logins).' },
 };
@@ -96,6 +100,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         url: { type: 'string', description: 'URL to query (omit for current page)' },
+        ...sessionIdProp,
       },
     },
   },
@@ -105,13 +110,13 @@ export const tools: ToolDefinition[] = [
     name: 'browser_snapshot',
     description:
       'Capture accessibility tree snapshot. Returns text with @eN ref IDs for interactive elements. ' +
-      'On page transition, compact site knowledge hints are auto-attached.',
-    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
+      'On page transition, compact site knowledge hints are auto-attached. Use frameId to snapshot a specific iframe.',
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp } },
   },
   {
     name: 'browser_html',
-    description: 'Get the current page HTML content.',
-    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
+    description: 'Get the current page HTML content. Use frameId to get HTML from a specific iframe.',
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp } },
   },
   {
     name: 'browser_eval',
@@ -140,6 +145,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         ref: { type: 'string', description: 'Element ref ID (e.g., "@e3")' },
         ...tabIdProp,
+        ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['ref'],
@@ -158,6 +164,7 @@ export const tools: ToolDefinition[] = [
           description: 'Clear existing content first (default: false)',
         },
         ...tabIdProp,
+        ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['ref', 'text'],
@@ -172,6 +179,7 @@ export const tools: ToolDefinition[] = [
         ref: { type: 'string', description: 'Element ref ID' },
         value: { type: 'string', description: 'Option value to select' },
         ...tabIdProp,
+        ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['ref', 'value'],
@@ -185,6 +193,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         ref: { type: 'string', description: 'Element ref ID' },
         ...tabIdProp,
+        ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['ref'],
@@ -199,6 +208,7 @@ export const tools: ToolDefinition[] = [
         x: { type: 'number', description: 'Horizontal scroll pixels' },
         y: { type: 'number', description: 'Vertical scroll pixels' },
         ...tabIdProp,
+        ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -219,6 +229,7 @@ export const tools: ToolDefinition[] = [
           description: 'Wait for selector to disappear instead of appear (default: false)',
         },
         ...tabIdProp,
+        ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['selector'],
@@ -236,6 +247,7 @@ export const tools: ToolDefinition[] = [
           description: 'Max wait ms (default: 30000)',
         },
         ...tabIdProp,
+        ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -279,6 +291,19 @@ export const tools: ToolDefinition[] = [
         ...sessionIdProp,
       },
       required: ['tabId'],
+    },
+  },
+
+  // ── Frame Management ────────────────────────────────────────
+  {
+    name: 'browser_frame_list',
+    description: 'List all frames (main + iframes) in the current tab. Returns frameId, parentFrameId, and URL for each frame. Use frameId to target specific iframes with snapshot/click/type/etc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
     },
   },
 
