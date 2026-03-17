@@ -215,8 +215,8 @@ export class ExtensionBridge {
       '--disable-backgrounding-occluded-windows',
       '--no-first-run',
       '--disable-popup-blocking',
+      '--disable-infobars',
       '--window-size=1280,720',
-      // Prevent PerfettoTrace crash on macOS 26 (Tahoe) with Chrome for Testing
       '--disable-features=PerfettoSystemTracing',
     ];
 
