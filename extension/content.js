@@ -37,14 +37,25 @@ async function handleCommand(cmd) {
 
 // ── Snapshot (Accessibility-like tree) ───────────────────────
 
-function buildSnapshot() {
-  refMap = new Map();
-  refCounter = 0;
+let snapshotInProgress = false;
 
-  const title = document.title;
-  const lines = [`[RootWebArea] "${title}"`];
-  walkDOM(document.body, 1, lines);
-  return lines.join('\n');
+function buildSnapshot() {
+  // Guard against concurrent snapshot requests overwriting refMap mid-walk
+  if (snapshotInProgress) {
+    throw new Error('Snapshot already in progress');
+  }
+  snapshotInProgress = true;
+  try {
+    refMap = new Map();
+    refCounter = 0;
+
+    const title = document.title;
+    const lines = [`[RootWebArea] "${title}"`];
+    walkDOM(document.body, 1, lines);
+    return lines.join('\n');
+  } finally {
+    snapshotInProgress = false;
+  }
 }
 
 function walkDOM(node, depth, lines) {
@@ -80,6 +91,11 @@ function walkDOM(node, depth, lines) {
       } else {
         walkDOM(el, depth, lines);
       }
+    }
+
+    // Traverse into open Shadow DOM (closed shadow roots return null)
+    if (el.shadowRoot) {
+      walkDOM(el.shadowRoot, depth + 1, lines);
     }
   }
 }
@@ -135,6 +151,9 @@ function getRole(el) {
   return map[tag] || null;
 }
 
+const MAX_VALUE_LENGTH = 100;
+const MAX_LABEL_LENGTH = 120;
+
 function getLabel(el) {
   const tag = el.tagName?.toLowerCase();
   const parts = [];
@@ -145,13 +164,13 @@ function getLabel(el) {
     if (type === 'checkbox' || type === 'radio') {
       parts.push(el.checked ? 'checked' : 'unchecked');
     } else if (el.value) {
-      parts.push(el.value.substring(0, 100));
+      parts.push(el.value.substring(0, MAX_VALUE_LENGTH));
     }
   } else if (tag === 'textarea' && el.value) {
-    parts.push(el.value.substring(0, 100));
+    parts.push(el.value.substring(0, MAX_VALUE_LENGTH));
   } else if (tag === 'select') {
     const selected = el.options?.[el.selectedIndex];
-    if (selected) parts.push(selected.text?.substring(0, 80) || el.value);
+    if (selected) parts.push(selected.text?.substring(0, MAX_VALUE_LENGTH) || el.value);
   }
 
   // State indicators
@@ -167,11 +186,11 @@ function getLabel(el) {
 
   // Fallback to text labels
   return (
-    el.getAttribute('aria-label')?.substring(0, 120) ||
-    el.getAttribute('alt')?.substring(0, 120) ||
-    el.getAttribute('title')?.substring(0, 120) ||
-    el.getAttribute('placeholder')?.substring(0, 120) ||
-    el.textContent?.trim().substring(0, 120) ||
+    el.getAttribute('aria-label')?.substring(0, MAX_LABEL_LENGTH) ||
+    el.getAttribute('alt')?.substring(0, MAX_LABEL_LENGTH) ||
+    el.getAttribute('title')?.substring(0, MAX_LABEL_LENGTH) ||
+    el.getAttribute('placeholder')?.substring(0, MAX_LABEL_LENGTH) ||
+    el.textContent?.trim().substring(0, MAX_LABEL_LENGTH) ||
     ''
   );
 }
@@ -187,11 +206,17 @@ function getDirectText(el) {
 function isVisible(el) {
   try {
     if (el.hidden) return false;
-    const s = getComputedStyle(el);
-    if (s.display === 'none' || s.visibility === 'hidden') return false;
-    if (parseFloat(s.opacity) === 0) return false;
-    if (!el.offsetWidth && !el.offsetHeight &&
-        !['fixed', 'absolute', 'sticky'].includes(s.position)) return false;
+    // checkVisibility() is a native C++ call — replaces getComputedStyle for
+    // display:none, visibility:hidden, and opacity:0 in a single fast check.
+    // Available in Chrome 105+ (AlyBrowser always uses modern Chrome).
+    if (!el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
+    // Zero-size check: skip elements with no layout dimensions unless positioned
+    // (fixed/absolute/sticky can be interactive at 0×0).
+    // Only calls getComputedStyle in the rare zero-size case.
+    if (!el.offsetWidth && !el.offsetHeight) {
+      const pos = getComputedStyle(el).position;
+      if (pos !== 'fixed' && pos !== 'absolute' && pos !== 'sticky') return false;
+    }
     return true;
   } catch { return true; }
 }
@@ -207,7 +232,8 @@ function handleClick(ref) {
   const rect = el.getBoundingClientRect();
   const x = rect.left + rect.width / 2;
   const y = rect.top + rect.height / 2;
-  const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+  // composed: true allows events to cross Shadow DOM boundaries
+  const opts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y };
 
   el.dispatchEvent(new PointerEvent('pointerover', opts));
   el.dispatchEvent(new PointerEvent('pointerenter', { ...opts, bubbles: false }));
@@ -275,16 +301,9 @@ function handleType(params) {
 
   // ── Regular input/textarea path ──
 
-  // Fallback: find any visible text input on the page
+  // Reject if element is not a text input
   if (!('value' in el) && !el.isContentEditable) {
-    const fallback = document.querySelector(
-      'input[type="email"], input[type="text"], input[type="password"], input:not([type]), textarea'
-    );
-    if (fallback) {
-      el = fallback;
-    } else {
-      throw new Error(`Element ${params.ref} is not a text input and no fallback input found.`);
-    }
+    throw new Error(`Element ${params.ref} is not a text input. Call browser_snapshot to get fresh ref IDs and target the correct input element.`);
   }
 
   // Focus the element with full event sequence
@@ -342,7 +361,7 @@ function handleHover(ref) {
   const rect = el.getBoundingClientRect();
   const x = rect.left + rect.width / 2;
   const y = rect.top + rect.height / 2;
-  const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+  const opts = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y };
 
   el.dispatchEvent(new PointerEvent('pointerenter', { ...opts, bubbles: false }));
   el.dispatchEvent(new MouseEvent('mouseenter', { ...opts, bubbles: false }));

@@ -1,7 +1,181 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { EventEmitter } from 'events';
+import * as child_process from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+
+// ── Hoisted mock classes (available to vi.mock factories) ────────
+
+const {
+  MockWebSocket,
+  MockWebSocketServer,
+  mockWssInstances,
+  createMockChildProcess,
+  mockCPHolder,
+} = vi.hoisted(() => {
+  const { EventEmitter } = require('events');
+
+  class MockWebSocket extends EventEmitter {
+    static readonly OPEN = 1;
+    static readonly CLOSED = 3;
+    readyState = 1; // OPEN
+    send = vi.fn();
+    close = vi.fn(function (this: any) { this.readyState = 3; });
+  }
+
+  class MockWebSocketServer extends EventEmitter {
+    close = vi.fn((cb?: () => void) => cb?.());
+  }
+
+  const mockWssInstances: MockWebSocketServer[] = [];
+
+  function createMockChildProcess() {
+    return Object.assign(new EventEmitter(), {
+      pid: 12345,
+      killed: false,
+      kill: vi.fn(),
+      unref: vi.fn(),
+      stderr: new EventEmitter(),
+    });
+  }
+
+  const mockCPHolder = { current: createMockChildProcess() };
+
+  return { MockWebSocket, MockWebSocketServer, mockWssInstances, createMockChildProcess, mockCPHolder };
+});
+
+// ── vi.mock declarations (hoisted, use hoisted refs) ─────────────
+
+vi.mock('ws', () => ({
+  WebSocket: MockWebSocket,
+  WebSocketServer: function WSSProxy(this: any) {
+    const wss = new MockWebSocketServer();
+    mockWssInstances.push(wss);
+    setTimeout(() => wss.emit('listening'), 0);
+    Object.assign(this, wss);
+    // Copy EventEmitter prototype
+    Object.setPrototypeOf(this, wss);
+    return wss;
+  },
+}));
+
+vi.mock('child_process', async () => {
+  const actual = await vi.importActual<typeof child_process>('child_process');
+  return {
+    ...actual,
+    spawn: vi.fn(() => mockCPHolder.current),
+    execSync: vi.fn(),
+  };
+});
+
+vi.mock('../../src/chrome/finder', () => ({
+  findChromeForTesting: vi.fn(() => '/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'),
+}));
+
+vi.mock('fs', async () => {
+  const actual = await vi.importActual<typeof fs>('fs');
+  return {
+    ...actual,
+    mkdirSync: vi.fn(),
+    writeFileSync: vi.fn(),
+    readFileSync: vi.fn(() => 'const WS_PORT = 19222;'),
+    existsSync: vi.fn(() => true),
+    readdirSync: vi.fn(() => ['background.js', 'manifest.json', 'content.js']),
+    statSync: vi.fn(() => ({ isFile: () => true })),
+    copyFileSync: vi.fn(),
+    unlinkSync: vi.fn(),
+    rmSync: vi.fn(),
+  };
+});
+
+// ── Import after mocking ─────────────────────────────────────────
+
 import { ExtensionBridge } from '../../src/extension/bridge';
 
+const mockedSpawn = vi.mocked(child_process.spawn);
+const mockedExecSync = vi.mocked(child_process.execSync);
+const mockedFs = {
+  mkdirSync: vi.mocked(fs.mkdirSync),
+  writeFileSync: vi.mocked(fs.writeFileSync),
+  readFileSync: vi.mocked(fs.readFileSync),
+  existsSync: vi.mocked(fs.existsSync),
+  readdirSync: vi.mocked(fs.readdirSync),
+  statSync: vi.mocked(fs.statSync),
+  copyFileSync: vi.mocked(fs.copyFileSync),
+  unlinkSync: vi.mocked(fs.unlinkSync),
+  rmSync: vi.mocked(fs.rmSync),
+};
+
+// ── Helpers ──────────────────────────────────────────────────────
+
+function getLatestWss() {
+  return mockWssInstances[mockWssInstances.length - 1];
+}
+
+/** Simulate extension WS connection + ready handshake */
+function simulateExtensionReady(wss: InstanceType<typeof MockWebSocketServer>) {
+  const ws = new MockWebSocket();
+  wss.emit('connection', ws);
+  // Simulate 'ready' message from extension
+  ws.emit('message', Buffer.from(JSON.stringify({ type: 'ready', tabId: 1 })));
+  return ws;
+}
+
+/** Simulate a response from the extension */
+function simulateResponse(ws: InstanceType<typeof MockWebSocket>, id: number, result: unknown, error?: string) {
+  const msg = error ? { id, error } : { id, result };
+  ws.emit('message', Buffer.from(JSON.stringify(msg)));
+}
+
+/** Launch bridge and connect extension, returning both */
+async function launchAndConnect(sessionId = 'test', url?: string) {
+  const bridge = new ExtensionBridge(sessionId);
+  const launchPromise = bridge.launch(url ? { url } : undefined);
+  await vi.advanceTimersByTimeAsync(1); // WSS listening
+
+  const wss = getLatestWss();
+  const ws = simulateExtensionReady(wss);
+  await vi.advanceTimersByTimeAsync(1);
+
+  if (url) {
+    // respond to navigate
+    const sent = JSON.parse(ws.send.mock.calls[0][0]);
+    simulateResponse(ws, sent.id, undefined);
+  }
+
+  await launchPromise;
+  return { bridge, ws, wss };
+}
+
+// ── Tests ────────────────────────────────────────────────────────
+
 describe('ExtensionBridge', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    mockWssInstances.length = 0;
+    mockCPHolder.current = createMockChildProcess();
+
+    // Default fs mocks
+    mockedFs.readFileSync.mockImplementation((p: any) => {
+      const filePath = String(p);
+      if (filePath.endsWith('manifest.json')) {
+        return '{"version": "1.0.0", "name": "AlyBrowser"}';
+      }
+      return 'const WS_PORT = 19222;';
+    });
+    mockedFs.existsSync.mockReturnValue(true);
+    mockedFs.readdirSync.mockReturnValue(['background.js', 'manifest.json', 'content.js'] as any);
+    mockedFs.statSync.mockReturnValue({ isFile: () => true } as any);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // ── Constructor ──────────────────────────────────────────────
+
   describe('constructor', () => {
     it('defaults to "default" sessionId', () => {
       const bridge = new ExtensionBridge();
@@ -17,12 +191,9 @@ describe('ExtensionBridge', () => {
     });
 
     it('rejects invalid sessionId characters', () => {
-      const invalid = ['has space', 'foo@bar', 'test.session', 'a/b', 'hello!'];
+      const invalid = ['has space', 'foo@bar', 'test.session', 'a/b', 'hello!', ''];
       for (const id of invalid) {
-        expect(
-          () => new ExtensionBridge(id),
-          `Should reject: "${id}"`,
-        ).toThrow('Invalid sessionId');
+        expect(() => new ExtensionBridge(id), `Should reject: "${id}"`).toThrow('Invalid sessionId');
       }
     });
 
@@ -37,12 +208,511 @@ describe('ExtensionBridge', () => {
     });
   });
 
-  describe('send()', () => {
+  // ── send() ───────────────────────────────────────────────────
+
+  describe('send', () => {
     it('throws when not connected', async () => {
       const bridge = new ExtensionBridge();
       await expect(bridge.send('snapshot')).rejects.toThrow('Extension not connected');
     });
+
+    it('sends JSON message with incrementing id', async () => {
+      const { bridge, ws } = await launchAndConnect();
+
+      const p1 = bridge.send('snapshot');
+      const sent1 = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sent1).toEqual({ id: 1, action: 'snapshot', params: undefined });
+      simulateResponse(ws, sent1.id, '<tree>');
+      expect(await p1).toBe('<tree>');
+
+      const p2 = bridge.send('click', { ref: '@e0' });
+      const sent2 = JSON.parse(ws.send.mock.calls[1][0]);
+      expect(sent2.id).toBe(2);
+      expect(sent2.action).toBe('click');
+      simulateResponse(ws, sent2.id, undefined);
+      await p2;
+    });
+
+    it('rejects on error response from extension', async () => {
+      const { bridge, ws } = await launchAndConnect();
+
+      const p = bridge.send('click', { ref: '@e99' });
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      simulateResponse(ws, sent.id, null, 'Element not found');
+
+      await expect(p).rejects.toThrow('Element not found');
+    });
+
+    it('rejects on timeout after 60s', async () => {
+      const { bridge } = await launchAndConnect();
+
+      const p = bridge.send('snapshot');
+      vi.advanceTimersByTime(60_001);
+
+      await expect(p).rejects.toThrow('Timeout: snapshot');
+    });
+
+    it('clears timeout on successful response', async () => {
+      const { bridge, ws } = await launchAndConnect();
+
+      const p = bridge.send('snapshot');
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      simulateResponse(ws, sent.id, 'ok');
+      await p;
+
+      // Advancing past timeout should not cause issues
+      vi.advanceTimersByTime(60_001);
+    });
+
+    it('throws when ws is closing', async () => {
+      const { bridge } = await launchAndConnect();
+      (bridge as any)._closing = true;
+      await expect(bridge.send('snapshot')).rejects.toThrow('Extension is closing');
+      (bridge as any)._closing = false;
+    });
+
+    it('throws when ws readyState is not OPEN', async () => {
+      const { bridge, ws } = await launchAndConnect();
+      ws.readyState = MockWebSocket.CLOSED;
+      await expect(bridge.send('snapshot')).rejects.toThrow('Extension not connected');
+    });
+
+    it('cleans up pending map on ws.send failure', async () => {
+      const { bridge, ws } = await launchAndConnect();
+
+      ws.send.mockImplementationOnce(() => { throw new Error('WS write error'); });
+      await expect(bridge.send('navigate', { url: 'http://x' })).rejects.toThrow('WS write error');
+      expect((bridge as any).pending.size).toBe(0);
+    });
   });
+
+  // ── setupWsHandlers ──────────────────────────────────────────
+
+  describe('setupWsHandlers (message routing)', () => {
+    it('ignores ping, alarm, and ready messages', async () => {
+      const { bridge, ws } = await launchAndConnect();
+
+      const p = bridge.send('snapshot');
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+
+      // These should not resolve/reject the pending
+      ws.emit('message', Buffer.from(JSON.stringify({ type: 'ping' })));
+      ws.emit('message', Buffer.from(JSON.stringify({ type: 'alarm' })));
+      ws.emit('message', Buffer.from(JSON.stringify({ type: 'ready' })));
+
+      // Real response
+      simulateResponse(ws, sent.id, 'data');
+      expect(await p).toBe('data');
+    });
+
+    it('ignores malformed JSON messages', async () => {
+      const { ws } = await launchAndConnect();
+
+      // Should not throw
+      ws.emit('message', Buffer.from('not json at all'));
+      ws.emit('message', Buffer.from('{incomplete'));
+    });
+
+    it('rejects all pending on WS close', async () => {
+      const { bridge, ws } = await launchAndConnect();
+
+      const p1 = bridge.send('snapshot');
+      const p2 = bridge.send('click', { ref: '@e0' });
+
+      ws.emit('close');
+
+      await expect(p1).rejects.toThrow('Extension disconnected');
+      await expect(p2).rejects.toThrow('Extension disconnected');
+      expect(bridge.isConnected).toBe(false);
+    });
+
+    it('ignores response with unknown id', async () => {
+      const { ws } = await launchAndConnect();
+      // Should not throw
+      simulateResponse(ws, 99999, 'orphan');
+    });
+  });
+
+  // ── launch() ─────────────────────────────────────────────────
+
+  describe('launch', () => {
+    it('connects via quick connect when extension already running', async () => {
+      const { bridge, ws } = await launchAndConnect();
+
+      expect(bridge.isConnected).toBe(true);
+      // No Chrome launch since quick connect succeeded
+      expect(mockedSpawn).not.toHaveBeenCalled();
+    });
+
+    it('navigates to url after connection', async () => {
+      const { ws } = await launchAndConnect('test', 'https://example.com');
+
+      // First send call should be navigate
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sent.action).toBe('navigate');
+      expect(sent.params.url).toBe('https://example.com');
+    });
+
+    it('does not navigate when no url', async () => {
+      const { ws } = await launchAndConnect();
+      expect(ws.send).not.toHaveBeenCalled();
+    });
+
+    it('falls back to Chrome for Testing when quick connect times out', async () => {
+      const bridge = new ExtensionBridge('test');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1); // WSS listening
+
+      const wss = getLatestWss();
+
+      // Quick connect timeout (5s)
+      await vi.advanceTimersByTimeAsync(5001);
+
+      // Now Chrome should be launched
+      expect(mockedSpawn).toHaveBeenCalled();
+      const flags = mockedSpawn.mock.calls[0][1] as string[];
+      expect(flags.some(f => f.startsWith('--user-data-dir='))).toBe(true);
+
+      // Simulate extension connecting via waitForExtension
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+
+      await launchPromise;
+      expect(bridge.isConnected).toBe(true);
+    });
+
+    it('creates session directory and writes port/pid files', async () => {
+      await launchAndConnect('my-session');
+
+      expect(mockedFs.mkdirSync).toHaveBeenCalled();
+      // writeFileSync called for port and pid
+      const writeCalls = mockedFs.writeFileSync.mock.calls.map(c => String(c[0]));
+      expect(writeCalls.some(p => p.endsWith('port'))).toBe(true);
+      expect(writeCalls.some(p => p.endsWith('pid'))).toBe(true);
+    });
+  });
+
+  // ── waitForExtensionQuick ────────────────────────────────────
+
+  describe('waitForExtensionQuick (via launch)', () => {
+    it('returns false on timeout', async () => {
+      const bridge = new ExtensionBridge('test');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1); // WSS listening
+
+      // Let quick connect timeout expire (5s)
+      await vi.advanceTimersByTimeAsync(5001);
+
+      // Should fall through to Chrome launch path
+      expect(mockedSpawn).toHaveBeenCalled();
+
+      // Complete the waitForExtension to avoid dangling promise
+      const wss = getLatestWss();
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+
+    it('returns false when extension disconnects during handshake', async () => {
+      const bridge = new ExtensionBridge('test');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1); // WSS listening
+
+      const wss = getLatestWss();
+      // Connect then immediately close (no ready message)
+      const ws = new MockWebSocket();
+      wss.emit('connection', ws);
+      ws.emit('close');
+
+      // Quick connect should return false → falls back to Chrome launch
+      await vi.advanceTimersByTimeAsync(5001);
+      expect(mockedSpawn).toHaveBeenCalled();
+
+      // Complete launch
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+  });
+
+  // ── waitForExtension (30s timeout) ───────────────────────────
+
+  describe('waitForExtension (via launch fallback)', () => {
+    it('times out after 30s if no extension connects', async () => {
+      const bridge = new ExtensionBridge('test');
+      // Catch early to prevent unhandled rejection during timer advancement
+      const launchPromise = bridge.launch().catch((e: Error) => e);
+      await vi.advanceTimersByTimeAsync(1); // WSS listening
+
+      // Quick connect timeout
+      await vi.advanceTimersByTimeAsync(5001);
+
+      // Now in waitForExtension — advance past 30s
+      await vi.advanceTimersByTimeAsync(30_001);
+
+      const result = await launchPromise;
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toContain('Extension connect timeout');
+    });
+
+    it('rejects when extension disconnects during handshake', async () => {
+      const bridge = new ExtensionBridge('test');
+      const launchPromise = bridge.launch().catch((e: Error) => e);
+      await vi.advanceTimersByTimeAsync(1); // WSS listening
+
+      // Quick connect timeout
+      await vi.advanceTimersByTimeAsync(5001);
+
+      // Extension connects but disconnects before ready
+      const wss = getLatestWss();
+      const ws = new MockWebSocket();
+      wss.emit('connection', ws);
+      ws.emit('close');
+
+      const result = await launchPromise;
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toContain('Extension disconnected during handshake');
+    });
+
+    it('removes connection listener after settling', async () => {
+      const bridge = new ExtensionBridge('test');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+
+      // Quick connect timeout
+      await vi.advanceTimersByTimeAsync(5001);
+
+      // Extension connects and is ready
+      const wss = getLatestWss();
+      const connectionListenersBefore = wss.listenerCount('connection');
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+
+      // After settling, the connection listener should be removed
+      const connectionListenersAfter = wss.listenerCount('connection');
+      expect(connectionListenersAfter).toBeLessThan(connectionListenersBefore);
+    });
+  });
+
+  // ── prepareSessionExtension ──────────────────────────────────
+
+  describe('prepareSessionExtension (via launch)', () => {
+    async function triggerChromeLaunch() {
+      const bridge = new ExtensionBridge('test');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1); // WSS listening
+
+      // Quick connect timeout → triggers prepareSessionExtension + launchChrome
+      await vi.advanceTimersByTimeAsync(5001);
+
+      return { bridge, launchPromise, wss: getLatestWss() };
+    }
+
+    it('copies extension files and injects WS port', async () => {
+      const { launchPromise, wss } = await triggerChromeLaunch();
+
+      // background.js should have port injected
+      const writeCalls = mockedFs.writeFileSync.mock.calls;
+      const bgWrite = writeCalls.find(c => String(c[0]).endsWith('background.js'));
+      expect(bgWrite).toBeDefined();
+      expect(bgWrite![1]).toContain('const WS_PORT =');
+
+      // manifest.json should have version bumped
+      const manifestWrite = writeCalls.find(c => String(c[0]).endsWith('manifest.json'));
+      expect(manifestWrite).toBeDefined();
+
+      // content.js should be copied directly
+      expect(mockedFs.copyFileSync).toHaveBeenCalled();
+
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+
+    it('warns when background.js missing WS_PORT marker', async () => {
+      mockedFs.readFileSync.mockImplementation((p: any) => {
+        const filePath = String(p);
+        if (filePath.endsWith('manifest.json')) return '{"version": "1.0.0"}';
+        return 'no marker here';
+      });
+
+      const { launchPromise, wss } = await triggerChromeLaunch();
+
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+      // No assertion needed — just verifying no crash
+    });
+
+    it('skips when extension dir not found', async () => {
+      mockedFs.existsSync.mockReturnValue(false);
+
+      const bridge = new ExtensionBridge('test');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.advanceTimersByTimeAsync(5001);
+
+      // Extension dir not found → prepareSessionExtension returns early
+      // But Chrome still launches
+      expect(mockedSpawn).toHaveBeenCalled();
+
+      // Extension won't have --load-extension flag
+      const spawnFlags = mockedSpawn.mock.calls[0][1] as string[];
+      expect(spawnFlags.some(f => f.startsWith('--load-extension'))).toBe(false);
+
+      // Complete launch
+      const wss = getLatestWss();
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+  });
+
+  // ── launchChrome ─────────────────────────────────────────────
+
+  describe('launchChrome (via launch)', () => {
+    async function triggerChromeLaunch() {
+      const bridge = new ExtensionBridge('test');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.advanceTimersByTimeAsync(5001);
+      return { bridge, launchPromise, wss: getLatestWss() };
+    }
+
+    it('spawns Chrome with correct flags', async () => {
+      const { launchPromise, wss } = await triggerChromeLaunch();
+
+      expect(mockedSpawn).toHaveBeenCalledTimes(1);
+      const [chromePath, flags, opts] = mockedSpawn.mock.calls[0];
+      expect(chromePath).toContain('Chrome');
+      expect(flags).toContain('--no-first-run');
+      expect(flags).toContain('--disable-popup-blocking');
+      expect(flags).toContain('--disable-infobars');
+      expect(flags).toContain('--window-size=1280,720');
+      expect(opts).toEqual(expect.objectContaining({ detached: true }));
+
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+
+    it('includes --load-extension when extension copy exists', async () => {
+      const { launchPromise, wss } = await triggerChromeLaunch();
+
+      const flags = mockedSpawn.mock.calls[0][1] as string[];
+      expect(flags.some(f => f.startsWith('--load-extension='))).toBe(true);
+
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+
+    it('removes macOS quarantine with xattr', async () => {
+      // Override platform to darwin
+      const origPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin', writable: true });
+
+      const { launchPromise, wss } = await triggerChromeLaunch();
+
+      expect(mockedExecSync).toHaveBeenCalledWith(
+        expect.stringContaining('xattr -c'),
+        expect.anything(),
+      );
+
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+
+      Object.defineProperty(process, 'platform', { value: origPlatform, writable: true });
+    });
+
+    it('unrefs Chrome process for detached execution', async () => {
+      const { launchPromise, wss } = await triggerChromeLaunch();
+
+      expect(mockCPHolder.current.unref).toHaveBeenCalled();
+
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+  });
+
+  // ── close() ──────────────────────────────────────────────────
+
+  describe('close', () => {
+    it('can be called without prior launch', async () => {
+      const bridge = new ExtensionBridge();
+      await bridge.close(); // Should not throw
+    });
+
+    it('can be called multiple times', async () => {
+      const bridge = new ExtensionBridge();
+      await bridge.close();
+      await bridge.close();
+    });
+
+    it('closes ws, wss, and cleans up files', async () => {
+      const { bridge, ws, wss } = await launchAndConnect();
+
+      await bridge.close();
+
+      expect(ws.close).toHaveBeenCalled();
+      expect(wss.close).toHaveBeenCalled();
+      expect(bridge.isConnected).toBe(false);
+      // port and pid cleanup
+      const unlinkPaths = mockedFs.unlinkSync.mock.calls.map(c => String(c[0]));
+      expect(unlinkPaths.some(p => p.endsWith('port'))).toBe(true);
+      expect(unlinkPaths.some(p => p.endsWith('pid'))).toBe(true);
+      // extension copy cleanup
+      expect(mockedFs.rmSync).toHaveBeenCalled();
+    });
+
+    it('kills Chrome process with SIGTERM then SIGKILL', async () => {
+      const bridge = new ExtensionBridge('test');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.advanceTimersByTimeAsync(5001); // trigger Chrome launch
+
+      const wss = getLatestWss();
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+
+      // Start close (Chrome process has pid)
+      const closePromise = bridge.close();
+
+      // Simulate Chrome not exiting after SIGTERM → SIGKILL after 5s
+      await vi.advanceTimersByTimeAsync(5001);
+      await closePromise;
+    });
+
+    it('resolves when Chrome exits after SIGTERM', async () => {
+      const bridge = new ExtensionBridge('test');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.advanceTimersByTimeAsync(5001);
+
+      const wss = getLatestWss();
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+
+      const closePromise = bridge.close();
+      // Simulate Chrome exiting gracefully
+      mockCPHolder.current.emit('exit', 0);
+      await closePromise;
+    });
+
+    it('handles file cleanup errors gracefully', async () => {
+      const bridge = new ExtensionBridge();
+      mockedFs.unlinkSync.mockImplementation(() => { throw new Error('ENOENT'); });
+      mockedFs.rmSync.mockImplementation(() => { throw new Error('ENOENT'); });
+      await bridge.close(); // Should not throw
+    });
+  });
+
+  // ── Convenience methods ──────────────────────────────────────
 
   describe('public API methods throw when not connected', () => {
     const bridge = new ExtensionBridge();
@@ -92,17 +762,168 @@ describe('ExtensionBridge', () => {
     }
   });
 
-  describe('close()', () => {
-    it('can be called without prior launch', async () => {
-      const bridge = new ExtensionBridge();
-      // Should not throw
-      await bridge.close();
+  describe('convenience methods send correct actions', () => {
+    let bridge: ExtensionBridge;
+    let ws: MockWebSocket;
+
+    beforeEach(async () => {
+      const result = await launchAndConnect();
+      bridge = result.bridge;
+      ws = result.ws;
     });
 
-    it('can be called multiple times', async () => {
-      const bridge = new ExtensionBridge();
-      await bridge.close();
-      await bridge.close();
+    async function verifySend(
+      call: Promise<unknown>,
+      expectedAction: string,
+      expectedParams?: Record<string, unknown>,
+    ) {
+      const sent = JSON.parse(ws.send.mock.calls[ws.send.mock.calls.length - 1][0]);
+      expect(sent.action).toBe(expectedAction);
+      if (expectedParams) {
+        expect(sent.params).toEqual(expect.objectContaining(expectedParams));
+      }
+      simulateResponse(ws, sent.id, 'ok');
+      return call;
+    }
+
+    it('navigate', async () => {
+      const p = bridge.navigate('https://example.com', 42);
+      await verifySend(p, 'navigate', { url: 'https://example.com', tabId: 42 });
+    });
+
+    it('snapshot returns string', async () => {
+      const p = bridge.snapshot(5);
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      simulateResponse(ws, sent.id, '<tree>');
+      expect(await p).toBe('<tree>');
+    });
+
+    it('click', async () => {
+      const p = bridge.click('@e5', 10);
+      await verifySend(p, 'click', { ref: '@e5', tabId: 10 });
+    });
+
+    it('type with clear option', async () => {
+      const p = bridge.type('@e1', 'hello', { clear: true, tabId: 3 });
+      await verifySend(p, 'type', { ref: '@e1', text: 'hello', clear: true, tabId: 3 });
+    });
+
+    it('type defaults clear to false', async () => {
+      const p = bridge.type('@e1', 'world');
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sent.params.clear).toBe(false);
+      simulateResponse(ws, sent.id, undefined);
+      await p;
+    });
+
+    it('selectOption', async () => {
+      const p = bridge.selectOption('@e2', 'opt1', 5);
+      await verifySend(p, 'select', { ref: '@e2', value: 'opt1', tabId: 5 });
+    });
+
+    it('hover', async () => {
+      const p = bridge.hover('@e3');
+      await verifySend(p, 'hover', { ref: '@e3' });
+    });
+
+    it('evaluate', async () => {
+      const p = bridge.evaluate('document.title', 7);
+      await verifySend(p, 'evaluate', { expression: 'document.title', tabId: 7 });
+    });
+
+    it('waitForSelector', async () => {
+      const p = bridge.waitForSelector('.loading', { timeout: 5000, hidden: true, tabId: 2 });
+      await verifySend(p, 'waitForSelector', { selector: '.loading', timeout: 5000, hidden: true, tabId: 2 });
+    });
+
+    it('waitForStable', async () => {
+      const p = bridge.waitForStable({ timeout: 10000, stableMs: 2000 });
+      await verifySend(p, 'waitForStable', { timeout: 10000, stableMs: 2000 });
+    });
+
+    it('scrollBy defaults x to 0', async () => {
+      const p = bridge.scrollBy({ y: 500 });
+      await verifySend(p, 'scrollBy', { x: 0, y: 500 });
+    });
+
+    it('goBack / goForward', async () => {
+      let p = bridge.goBack(1);
+      await verifySend(p, 'goBack', { tabId: 1 });
+
+      p = bridge.goForward(2);
+      await verifySend(p, 'goForward', { tabId: 2 });
+    });
+
+    it('getHTML', async () => {
+      const p = bridge.getHTML(3);
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      simulateResponse(ws, sent.id, '<html></html>');
+      expect(await p).toBe('<html></html>');
+    });
+
+    it('tab management', async () => {
+      let p: Promise<unknown> = bridge.tabList();
+      await verifySend(p, 'tabList');
+      p = bridge.tabNew('https://new.com');
+      await verifySend(p, 'tabNew', { url: 'https://new.com' });
+      p = bridge.tabClose(5);
+      await verifySend(p, 'tabClose', { tabId: 5 });
+      p = bridge.tabSwitch(3);
+      await verifySend(p, 'tabSwitch', { tabId: 3 });
+    });
+
+    it('cookies', async () => {
+      let p: Promise<unknown> = bridge.cookieGet('https://x.com', 'sid');
+      await verifySend(p, 'cookieGet', { url: 'https://x.com', name: 'sid' });
+      p = bridge.cookieSet({ url: 'https://x.com', name: 'sid', value: '123' });
+      await verifySend(p, 'cookieSet');
+      p = bridge.cookieDelete('https://x.com', 'sid');
+      await verifySend(p, 'cookieDelete', { url: 'https://x.com', name: 'sid' });
+    });
+
+    it('download / historySearch / notify / topSites', async () => {
+      let p: Promise<unknown> = bridge.download('https://x.com/f.zip', 'f.zip');
+      await verifySend(p, 'download', { url: 'https://x.com/f.zip', filename: 'f.zip' });
+      p = bridge.historySearch('test', 10);
+      await verifySend(p, 'historySearch', { query: 'test', maxResults: 10 });
+      p = bridge.notify('T', 'B');
+      await verifySend(p, 'notify', { title: 'T', message: 'B' });
+      p = bridge.topSites();
+      await verifySend(p, 'topSites');
+    });
+
+    it('alarms', async () => {
+      let p: Promise<unknown> = bridge.alarmCreate('a', { delayInMinutes: 1 });
+      await verifySend(p, 'alarmCreate', { name: 'a', delayInMinutes: 1 });
+      p = bridge.alarmList();
+      await verifySend(p, 'alarmList');
+      p = bridge.alarmClear('a');
+      await verifySend(p, 'alarmClear', { name: 'a' });
+      p = bridge.alarmEvents();
+      await verifySend(p, 'alarmEvents');
+    });
+
+    it('storage', async () => {
+      let p: Promise<unknown> = bridge.storageGet(['k1']);
+      await verifySend(p, 'storageGet', { keys: ['k1'] });
+      p = bridge.storageSet({ k1: 'v1' });
+      await verifySend(p, 'storageSet', { data: { k1: 'v1' } });
+    });
+
+    it('bookmarks', async () => {
+      let p: Promise<unknown> = bridge.bookmarkList('q');
+      await verifySend(p, 'bookmarkList', { query: 'q' });
+      p = bridge.bookmarkCreate('T', 'https://x.com', 'p1');
+      await verifySend(p, 'bookmarkCreate', { title: 'T', url: 'https://x.com', parentId: 'p1' });
+      p = bridge.bookmarkDelete('b1');
+      await verifySend(p, 'bookmarkDelete', { id: 'b1' });
+    });
+
+    it('clipboard', async () => {
+      let p: Promise<unknown> = bridge.clipboardRead(1);
+      await verifySend(p, 'clipboardRead', { tabId: 1 });
+      p = bridge.clipboardWrite('text', 2);
+      await verifySend(p, 'clipboardWrite', { text: 'text', tabId: 2 });
     });
   });
 });
