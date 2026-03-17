@@ -9,50 +9,30 @@ export function ensureDir(): void {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 }
 
-/** Capture the frontmost window, a specific window by title, or the main monitor */
+/** Capture the frontmost window by default, or a specific app's window by title */
 export function captureScreen(options?: { windowTitle?: string }): string {
   ensureDir();
   const filePath = path.join(SCREENSHOT_DIR, `screen-${Date.now()}.png`);
+  const target = options?.windowTitle;
 
-  // Default: capture the frontmost window (works correctly on multi-monitor)
-  const target = options?.windowTitle || getFrontmostApp();
+  // Get the window ID of the target or frontmost window
+  try {
+    const script = target
+      ? `tell application "System Events" to get id of front window of (first process whose name contains "${target}")`
+      : `tell application "System Events" to get id of front window of first process whose frontmost is true`;
+    const windowId = execSync(`osascript -e '${script}'`, {
+      encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
 
-  if (target) {
-    try {
-      const windowId = execSync(
-        `osascript -l JavaScript -e '
-          var app = Application("System Events");
-          var procs = app.processes.whose({frontmost: true});
-          if ("${options?.windowTitle || ''}") {
-            procs = app.processes.whose({name: {_contains: "${target}"}});
-          }
-          if (procs.length > 0) {
-            var wins = procs[0].windows();
-            if (wins.length > 0) { wins[0].attributes.byName("AXIdentifier").value(); }
-          }
-        '`,
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
-      ).trim();
+    if (windowId) {
+      execSync(`screencapture -x -o -l ${windowId} "${filePath}"`, { stdio: 'pipe' });
+      if (fs.existsSync(filePath) && fs.statSync(filePath).size > 0) return filePath;
+    }
+  } catch {}
 
-      if (windowId) {
-        execSync(`screencapture -x -l ${windowId} "${filePath}"`, { stdio: 'pipe' });
-        if (fs.existsSync(filePath) && fs.statSync(filePath).size > 0) return filePath;
-      }
-    } catch {}
-  }
-
-  // Fallback: capture main monitor only (-m flag for multi-monitor)
+  // Fallback: full screen of main monitor
   execSync(`screencapture -x -m "${filePath}"`, { stdio: 'pipe' });
   return filePath;
-}
-
-function getFrontmostApp(): string | null {
-  try {
-    return execSync(
-      `osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'`,
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
-    ).trim() || null;
-  } catch { return null; }
 }
 
 /** Click at screen coordinates using CoreGraphics via JXA */
