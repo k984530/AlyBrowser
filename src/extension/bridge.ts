@@ -70,13 +70,82 @@ export class ExtensionBridge {
 
   async launch(options?: { url?: string }): Promise<void> {
     await this.startServer();
-    this.prepareSessionExtension();
-    this.launchChrome();
-    await this.waitForExtension();
+
+    // Strategy 1: Try connecting to an already-installed extension in user's Chrome (5s)
+    const quickConnect = await this.waitForExtensionQuick(5000);
+
+    if (!quickConnect) {
+      // Strategy 2: Launch Chrome for Testing with --load-extension
+      log.debug('No existing extension detected, launching Chrome for Testing...');
+      this.prepareSessionExtension();
+      this.launchChrome();
+      await this.waitForExtension();
+    } else {
+      log.debug('Connected to existing Chrome extension');
+    }
 
     if (options?.url) {
       await this.send('navigate', { url: options.url });
     }
+  }
+
+  /** Quick check: is an extension already connected (e.g. user's Chrome with extension installed)? */
+  private waitForExtensionQuick(timeoutMs: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve(false), timeoutMs);
+
+      const onConnection = (ws: WebSocket) => {
+        this.ws = ws;
+
+        ws.on('message', (data) => {
+          let msg: Record<string, unknown>;
+          try { msg = JSON.parse(data.toString()); } catch { return; }
+
+          if (msg.type === 'ready') {
+            clearTimeout(timeout);
+            this.setupWsHandlers(ws);
+            resolve(true);
+            return;
+          }
+        });
+
+        ws.on('close', () => {
+          this.ws = null;
+          resolve(false);
+        });
+      };
+
+      this.wss!.on('connection', onConnection);
+    });
+  }
+
+  /** Set up message and close handlers for the WS connection */
+  private setupWsHandlers(ws: WebSocket): void {
+    ws.on('message', (data) => {
+      let msg: Record<string, unknown>;
+      try { msg = JSON.parse(data.toString()); } catch {
+        log.warn('Malformed message from extension:', data.toString().slice(0, 100));
+        return;
+      }
+
+      if (msg.type === 'ping' || msg.type === 'alarm' || msg.type === 'ready') return;
+
+      if (msg.id !== undefined) {
+        const p = this.pending.get(msg.id as number);
+        if (p) {
+          this.pending.delete(msg.id as number);
+          msg.error ? p.reject(new Error(msg.error as string)) : p.resolve(msg.result);
+        }
+      }
+    });
+
+    ws.on('close', () => {
+      this.ws = null;
+      for (const [, d] of this.pending) {
+        d.reject(new Error('Extension disconnected'));
+      }
+      this.pending.clear();
+    });
   }
 
   private async startServer(): Promise<void> {
@@ -197,12 +266,13 @@ export class ExtensionBridge {
 
     const timeout = setTimeout(() => {
       settled = true;
-      deferred.reject(new Error('Extension connect timeout (30s)'));
+      deferred.reject(new Error(
+        'Extension connect timeout (30s). If using regular Chrome, install the extension manually at chrome://extensions (Developer mode → Load unpacked → select extension/ folder).',
+      ));
     }, 30_000);
 
     const onConnection = (ws: WebSocket) => {
       if (settled) {
-        // Timeout already fired — reject late connection
         ws.close();
         return;
       }
@@ -210,40 +280,29 @@ export class ExtensionBridge {
       log.debug('Extension connected (session:', this._sessionId, ')');
       this.ws = ws;
 
-      ws.on('message', (data) => {
+      // Wait for 'ready' message, then set up handlers
+      const readyHandler = (data: Buffer) => {
         let msg: Record<string, unknown>;
-        try {
-          msg = JSON.parse(data.toString());
-        } catch {
-          log.warn('Malformed message from extension:', data.toString().slice(0, 100));
-          return;
-        }
+        try { msg = JSON.parse(data.toString()); } catch { return; }
 
         if (msg.type === 'ready') {
           log.debug('Extension ready, tab:', msg.tabId);
           settled = true;
           clearTimeout(timeout);
+          ws.removeListener('message', readyHandler);
+          this.setupWsHandlers(ws);
           deferred.resolve();
-          return;
         }
-        if (msg.type === 'ping' || msg.type === 'alarm') return;
-
-        if (msg.id !== undefined) {
-          const p = this.pending.get(msg.id as number);
-          if (p) {
-            this.pending.delete(msg.id as number);
-            msg.error ? p.reject(new Error(msg.error as string)) : p.resolve(msg.result);
-          }
-        }
-      });
+      };
+      ws.on('message', readyHandler);
 
       ws.on('close', () => {
-        this.ws = null;
-        // Reject all pending requests — they can't be delivered
-        for (const [, d] of this.pending) {
-          d.reject(new Error('Extension disconnected'));
+        if (!settled) {
+          this.ws = null;
+          settled = true;
+          clearTimeout(timeout);
+          deferred.reject(new Error('Extension disconnected during handshake'));
         }
-        this.pending.clear();
       });
     };
 
