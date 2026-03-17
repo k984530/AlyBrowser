@@ -27,8 +27,9 @@ function connect() {
   ws.onopen = async () => {
     connecting = false;
     console.log('[aly] Connected to bridge');
-    // Cancel reconnect alarm since we're connected
+    // Cancel reconnect alarm and reset backoff since we're connected
     chrome.alarms.clear('aly-reconnect');
+    reconnectDelay = RECONNECT_BASE_MIN;
     startPingTimer();
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tabs[0]) {
@@ -71,10 +72,14 @@ function connect() {
 }
 
 // Use chrome.alarms for reconnection — survives service worker suspension
-const RECONNECT_INTERVAL_MIN = 0.05; // 3 seconds
+const RECONNECT_BASE_MIN = 0.05;  // 3 seconds
+const RECONNECT_MAX_MIN = 0.5;    // 30 seconds
+let reconnectDelay = RECONNECT_BASE_MIN;
 
 function scheduleReconnect() {
-  chrome.alarms.create('aly-reconnect', { periodInMinutes: RECONNECT_INTERVAL_MIN });
+  chrome.alarms.create('aly-reconnect', { periodInMinutes: reconnectDelay });
+  // Exponential backoff: 3s → 6s → 12s → 24s → 30s (cap)
+  reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MIN);
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
