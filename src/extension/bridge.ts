@@ -423,6 +423,41 @@ export class ExtensionBridge {
     return (await this.send('getHTML', { tabId, frameId })) as string;
   }
 
+  // ── File Upload ────────────────────────────────────────────────
+
+  async upload(
+    filePath: string,
+    opts?: { ref?: string; tabId?: number; frameId?: number },
+  ): Promise<unknown> {
+    const fileData = fs.readFileSync(filePath);
+    const dataBase64 = fileData.toString('base64');
+    const fileName = path.basename(filePath);
+    const mimeType = this.guessMimeType(fileName);
+    return await this.send('upload', {
+      ref: opts?.ref,
+      fileName,
+      mimeType,
+      dataBase64,
+      tabId: opts?.tabId,
+      frameId: opts?.frameId,
+    });
+  }
+
+  private guessMimeType(fileName: string): string {
+    const ext = path.extname(fileName).toLowerCase();
+    const mimeMap: Record<string, string> = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+      '.pdf': 'application/pdf', '.txt': 'text/plain', '.csv': 'text/csv',
+      '.json': 'application/json', '.xml': 'application/xml',
+      '.zip': 'application/zip', '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls': 'application/vnd.ms-excel',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    };
+    return mimeMap[ext] || 'application/octet-stream';
+  }
+
   // ── Frame Management ─────────────────────────────────────────
 
   async frameList(tabId?: number): Promise<unknown> {

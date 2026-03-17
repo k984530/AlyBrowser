@@ -168,6 +168,7 @@ async function handleCommand(cmd) {
     case 'waitForSelector': return sendToContent({ action: 'waitForSelector', params }, tabId, frameId);
     case 'waitForStable': return sendToContent({ action: 'waitForStable', params }, tabId, frameId);
     case 'getHTML': return sendToContent({ action: 'getHTML' }, tabId, frameId);
+    case 'upload': return sendToContent({ action: 'upload', params }, tabId, frameId);
 
     // Frame management
     case 'frameList': return handleFrameList(tabId);

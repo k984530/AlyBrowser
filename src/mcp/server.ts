@@ -237,6 +237,10 @@ export class AlyBrowserMCPServer {
       case 'browser_tab_switch':
         return this.handleTabSwitch(args);
 
+      // Upload
+      case 'browser_upload':
+        return this.handleUpload(args);
+
       // Frames
       case 'browser_frame_list':
         return this.handleFrameList(args);
@@ -558,6 +562,16 @@ export class AlyBrowserMCPServer {
     const frameId = args.frameId as number | undefined;
     await bridge.waitForStable({ timeout, stableMs, tabId, frameId });
     return textResult('DOM stabilized.');
+  }
+
+  private async handleUpload(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const filePath = this.requireString(args, 'filePath');
+    const ref = args.ref as string | undefined;
+    const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
+    const result = await bridge.upload(filePath, { ref, tabId, frameId });
+    return jsonResult(result);
   }
 
   private async handleFrameList(args: Record<string, unknown>): Promise<ToolResult> {

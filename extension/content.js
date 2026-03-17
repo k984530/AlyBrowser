@@ -30,6 +30,7 @@ async function handleCommand(cmd) {
     case 'scrollBy': return handleScroll(cmd.params);
     case 'waitForSelector': return handleWaitForSelector(cmd.params);
     case 'waitForStable': return handleWaitForStable(cmd.params);
+    case 'upload': return handleUpload(cmd.params);
     case 'getHTML': return document.documentElement?.outerHTML || '';
     default: throw new Error(`Unknown content action: ${cmd.action}`);
   }
@@ -430,6 +431,39 @@ async function handleWaitForSelector(params) {
       attributeFilter: ['class', 'style', 'hidden', 'disabled'],
     });
   });
+}
+
+function handleUpload(params) {
+  const { ref, fileName, mimeType, dataBase64 } = params;
+
+  // Find the file input element
+  let el = ref ? refMap.get(ref) : null;
+  if (!el) {
+    // Try to find any file input on the page
+    el = document.querySelector('input[type="file"]');
+  }
+  if (!el || el.tagName?.toLowerCase() !== 'input' || el.type !== 'file') {
+    throw new Error(`Element ${ref || 'auto'} is not a file input. Call browser_snapshot to find an input[type=file].`);
+  }
+
+  // Decode base64 to binary
+  const binaryStr = atob(dataBase64);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+
+  // Create File object and inject via DataTransfer
+  const file = new File([bytes], fileName, { type: mimeType || 'application/octet-stream' });
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  el.files = dt.files;
+
+  // Dispatch events that frameworks listen for
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+
+  return { ok: true, fileName, size: bytes.length };
 }
 
 async function handleWaitForStable(params) {

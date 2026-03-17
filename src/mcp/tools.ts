@@ -294,6 +294,23 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── File Upload ─────────────────────────────────────────────
+  {
+    name: 'browser_upload',
+    description: 'Upload a file to an input[type=file] element. Reads the file from local filesystem, encodes as base64, and injects via DataTransfer API.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string', description: 'Absolute path to the file to upload' },
+        ref: { type: 'string', description: 'Element ref ID of the file input (optional — auto-detects if omitted)' },
+        ...tabIdProp,
+        ...frameIdProp,
+        ...sessionIdProp,
+      },
+      required: ['filePath'],
+    },
+  },
+
   // ── Frame Management ────────────────────────────────────────
   {
     name: 'browser_frame_list',
