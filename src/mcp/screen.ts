@@ -9,28 +9,50 @@ export function ensureDir(): void {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 }
 
-/** Capture the entire screen or a specific window */
+/** Capture the frontmost window, a specific window by title, or the main monitor */
 export function captureScreen(options?: { windowTitle?: string }): string {
   ensureDir();
   const filePath = path.join(SCREENSHOT_DIR, `screen-${Date.now()}.png`);
 
-  if (options?.windowTitle) {
-    // Capture specific window by title
+  // Default: capture the frontmost window (works correctly on multi-monitor)
+  const target = options?.windowTitle || getFrontmostApp();
+
+  if (target) {
     try {
       const windowId = execSync(
-        `osascript -e 'tell application "System Events" to get id of first window of (first process whose name contains "${options.windowTitle}")'`,
-        { encoding: 'utf-8' },
+        `osascript -l JavaScript -e '
+          var app = Application("System Events");
+          var procs = app.processes.whose({frontmost: true});
+          if ("${options?.windowTitle || ''}") {
+            procs = app.processes.whose({name: {_contains: "${target}"}});
+          }
+          if (procs.length > 0) {
+            var wins = procs[0].windows();
+            if (wins.length > 0) { wins[0].attributes.byName("AXIdentifier").value(); }
+          }
+        '`,
+        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
       ).trim();
-      execSync(`screencapture -x -l ${windowId} "${filePath}"`, { stdio: 'pipe' });
-    } catch {
-      // Fallback to full screen
-      execSync(`screencapture -x "${filePath}"`, { stdio: 'pipe' });
-    }
-  } else {
-    execSync(`screencapture -x "${filePath}"`, { stdio: 'pipe' });
+
+      if (windowId) {
+        execSync(`screencapture -x -l ${windowId} "${filePath}"`, { stdio: 'pipe' });
+        if (fs.existsSync(filePath) && fs.statSync(filePath).size > 0) return filePath;
+      }
+    } catch {}
   }
 
+  // Fallback: capture main monitor only (-m flag for multi-monitor)
+  execSync(`screencapture -x -m "${filePath}"`, { stdio: 'pipe' });
   return filePath;
+}
+
+function getFrontmostApp(): string | null {
+  try {
+    return execSync(
+      `osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'`,
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+    ).trim() || null;
+  } catch { return null; }
 }
 
 /** Click at screen coordinates using CoreGraphics via JXA */
