@@ -925,5 +925,64 @@ describe('ExtensionBridge', () => {
       p = bridge.clipboardWrite('text', 2);
       await verifySend(p, 'clipboardWrite', { text: 'text', tabId: 2 });
     });
+
+    // ── iframe / frameId support ───────────────────────────
+
+    it('frameList sends correct action', async () => {
+      const p = bridge.frameList(42);
+      await verifySend(p, 'frameList', { tabId: 42 });
+    });
+
+    it('snapshot passes frameId', async () => {
+      const p = bridge.snapshot(1, 3);
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sent.action).toBe('snapshot');
+      expect(sent.params).toEqual(expect.objectContaining({ tabId: 1, frameId: 3 }));
+      simulateResponse(ws, sent.id, '<tree>');
+      await p;
+    });
+
+    it('click passes frameId', async () => {
+      const p = bridge.click('@e0', 1, 5);
+      await verifySend(p, 'click', { ref: '@e0', tabId: 1, frameId: 5 });
+    });
+
+    it('type passes frameId', async () => {
+      const p = bridge.type('@e1', 'hello', { clear: true, tabId: 2, frameId: 7 });
+      await verifySend(p, 'type', { ref: '@e1', text: 'hello', clear: true, tabId: 2, frameId: 7 });
+    });
+
+    it('selectOption passes frameId', async () => {
+      const p = bridge.selectOption('@e2', 'opt', 1, 4);
+      await verifySend(p, 'select', { ref: '@e2', value: 'opt', tabId: 1, frameId: 4 });
+    });
+
+    it('hover passes frameId', async () => {
+      const p = bridge.hover('@e3', 1, 6);
+      await verifySend(p, 'hover', { ref: '@e3', tabId: 1, frameId: 6 });
+    });
+
+    it('getHTML passes frameId', async () => {
+      const p = bridge.getHTML(1, 8);
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sent.params).toEqual(expect.objectContaining({ tabId: 1, frameId: 8 }));
+      simulateResponse(ws, sent.id, '<html>');
+      await p;
+    });
+
+    it('waitForSelector passes frameId', async () => {
+      const p = bridge.waitForSelector('.btn', { timeout: 5000, hidden: false, tabId: 1, frameId: 2 });
+      await verifySend(p, 'waitForSelector', { selector: '.btn', tabId: 1, frameId: 2 });
+    });
+
+    it('waitForStable passes frameId', async () => {
+      const p = bridge.waitForStable({ timeout: 10000, stableMs: 500, tabId: 3, frameId: 9 });
+      await verifySend(p, 'waitForStable', { timeout: 10000, stableMs: 500, tabId: 3, frameId: 9 });
+    });
+
+    it('scrollBy passes frameId', async () => {
+      const p = bridge.scrollBy({ x: 0, y: 100, tabId: 1, frameId: 4 });
+      await verifySend(p, 'scrollBy', { x: 0, y: 100, tabId: 1, frameId: 4 });
+    });
   });
 });
