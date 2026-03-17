@@ -535,4 +535,67 @@ export const tools: ToolDefinition[] = [
     description: 'Close all active browser sessions and clean up resources.',
     inputSchema: { type: 'object', properties: {} },
   },
+
+  // ── Screen Tools (standalone, no extension needed) ─────
+  {
+    name: 'screen_capture',
+    description: 'Capture a screenshot of the entire screen or a specific window. Returns the image file path. Use this to see what is on screen when Extension Bridge cannot.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        windowTitle: { type: 'string', description: 'Window title to capture (omit for full screen)' },
+      },
+    },
+  },
+  {
+    name: 'screen_click',
+    description: 'Click at exact screen coordinates (x, y) using real mouse events. Works on any UI element including React buttons that synthetic events cannot trigger.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        x: { type: 'number', description: 'X coordinate (pixels from left)' },
+        y: { type: 'number', description: 'Y coordinate (pixels from top)' },
+        double: { type: 'boolean', description: 'Double-click (default: false)' },
+      },
+      required: ['x', 'y'],
+    },
+  },
+  {
+    name: 'screen_type',
+    description: 'Type text at the current cursor position using real keyboard events. Works on any focused input.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'Text to type' },
+      },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'screen_key',
+    description: 'Press a special key (enter, tab, escape, backspace, space, up, down, left, right, f1-f5). Supports modifiers.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'Key name (enter, tab, escape, backspace, space, up, down, left, right)' },
+        modifiers: {
+          type: 'array',
+          items: { type: 'string', enum: ['command', 'shift', 'option', 'control'] },
+          description: 'Modifier keys to hold',
+        },
+      },
+      required: ['key'],
+    },
+  },
+  {
+    name: 'screen_scroll',
+    description: 'Scroll at current mouse position. Negative = scroll up, positive = scroll down.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        deltaY: { type: 'number', description: 'Scroll amount (negative=up, positive=down)' },
+      },
+      required: ['deltaY'],
+    },
+  },
 ];

@@ -63,7 +63,7 @@ describe('MCP Protocol (stdio)', () => {
     expect(init.result.instructions).toBeTruthy();
   });
 
-  it('lists all 42 tools', async () => {
+  it('lists all 47 tools', async () => {
     const proc = startServer();
 
     send(proc, {
@@ -82,7 +82,7 @@ describe('MCP Protocol (stdio)', () => {
     const responses = await collectResponses(proc, 1500);
     const list = responses.get(2);
     expect(list).toBeDefined();
-    expect(list.result.tools).toHaveLength(42);
+    expect(list.result.tools).toHaveLength(47);
 
     const names = list.result.tools.map((t: any) => t.name);
     expect(names).toContain('browser_launch');

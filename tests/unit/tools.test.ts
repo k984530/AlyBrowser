@@ -52,6 +52,7 @@ describe('tools definitions', () => {
     'browser_top_sites',
     'browser_clipboard_read', 'browser_clipboard_write',
     'browser_session_list', 'browser_session_close_all',
+    'screen_capture', 'screen_click', 'screen_type', 'screen_key', 'screen_scroll',
   ];
 
   it('includes all expected tools', () => {

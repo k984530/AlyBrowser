@@ -3,9 +3,11 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import * as fs from 'fs';
 import { ExtensionBridge } from '../extension/bridge';
 import { tools } from './tools';
 import { SiteKnowledge } from './site-knowledge';
+import * as screen from './screen';
 
 const INSTRUCTIONS = `\
 AlyBrowser is a lightweight browser SDK for AI agents. \
@@ -298,6 +300,18 @@ export class AlyBrowserMCPServer {
         return this.handleSessionList();
       case 'browser_session_close_all':
         return this.handleSessionCloseAll();
+
+      // Screen Tools (standalone)
+      case 'screen_capture':
+        return this.handleScreenCapture(args);
+      case 'screen_click':
+        return this.handleScreenClick(args);
+      case 'screen_type':
+        return this.handleScreenType(args);
+      case 'screen_key':
+        return this.handleScreenKey(args);
+      case 'screen_scroll':
+        return this.handleScreenScroll(args);
 
       default:
         return errorResult(`Unknown tool: ${name}`);
@@ -835,6 +849,40 @@ export class AlyBrowserMCPServer {
       return `${k}=${val}`;
     });
     return parts.join(', ') || 'no args';
+  }
+
+  // ── Screen Tools ────────────────────────────────────────────
+
+  private async handleScreenCapture(args: Record<string, unknown>): Promise<ToolResult> {
+    const filePath = screen.captureScreen({
+      windowTitle: args.windowTitle as string | undefined,
+    });
+    return {
+      content: [
+        { type: 'text', text: `Screenshot saved: ${filePath}` },
+        { type: 'image', data: fs.readFileSync(filePath).toString('base64'), mimeType: 'image/png' } as any,
+      ],
+    };
+  }
+
+  private async handleScreenClick(args: Record<string, unknown>): Promise<ToolResult> {
+    screen.clickAt(args.x as number, args.y as number, { double: args.double as boolean });
+    return textResult(`Clicked at (${args.x}, ${args.y})${args.double ? ' (double)' : ''}`);
+  }
+
+  private async handleScreenType(args: Record<string, unknown>): Promise<ToolResult> {
+    screen.typeText(args.text as string);
+    return textResult(`Typed "${(args.text as string).slice(0, 50)}"`);
+  }
+
+  private async handleScreenKey(args: Record<string, unknown>): Promise<ToolResult> {
+    screen.pressKey(args.key as string, args.modifiers as string[] | undefined);
+    return textResult(`Pressed ${args.key}${args.modifiers ? ` + ${(args.modifiers as string[]).join('+')}` : ''}`);
+  }
+
+  private async handleScreenScroll(args: Record<string, unknown>): Promise<ToolResult> {
+    screen.scroll(args.deltaY as number);
+    return textResult(`Scrolled ${(args.deltaY as number) > 0 ? 'down' : 'up'} by ${Math.abs(args.deltaY as number)}`);
   }
 
   // ── Cleanup ─────────────────────────────────────────────────
