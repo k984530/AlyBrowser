@@ -926,6 +926,43 @@ describe('ExtensionBridge', () => {
       await verifySend(p, 'clipboardWrite', { text: 'text', tabId: 2 });
     });
 
+    // ── file upload ─────────────────────────────────────────
+
+    it('upload reads file and sends base64 with correct params', async () => {
+      // fs.readFileSync is mocked — return fake file content
+      mockedFs.readFileSync.mockReturnValueOnce(Buffer.from('fake-png-data'));
+      const p = bridge.upload('/path/to/image.png', { ref: '@e5', tabId: 1, frameId: 2 });
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sent.action).toBe('upload');
+      expect(sent.params.fileName).toBe('image.png');
+      expect(sent.params.mimeType).toBe('image/png');
+      expect(sent.params.dataBase64).toBe(Buffer.from('fake-png-data').toString('base64'));
+      expect(sent.params.ref).toBe('@e5');
+      expect(sent.params.tabId).toBe(1);
+      expect(sent.params.frameId).toBe(2);
+      simulateResponse(ws, sent.id, { ok: true });
+      await p;
+    });
+
+    it('upload auto-detects MIME type from extension', async () => {
+      mockedFs.readFileSync.mockReturnValueOnce(Buffer.from('data'));
+      const p = bridge.upload('/docs/report.pdf');
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sent.params.mimeType).toBe('application/pdf');
+      expect(sent.params.fileName).toBe('report.pdf');
+      simulateResponse(ws, sent.id, { ok: true });
+      await p;
+    });
+
+    it('upload defaults to octet-stream for unknown extensions', async () => {
+      mockedFs.readFileSync.mockReturnValueOnce(Buffer.from('data'));
+      const p = bridge.upload('/file.xyz');
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sent.params.mimeType).toBe('application/octet-stream');
+      simulateResponse(ws, sent.id, { ok: true });
+      await p;
+    });
+
     // ── iframe / frameId support ───────────────────────────
 
     it('frameList sends correct action', async () => {

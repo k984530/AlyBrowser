@@ -32,7 +32,7 @@ function loadContentFunctions() {
   const fn = new Function(
     'chrome', 'window', 'document',
     `${src}
-    return { buildSnapshot, walkDOM, isVisible, isInteractive, getRole, getLabel, assignRef, refMap, getDirectText };`,
+    return { buildSnapshot, walkDOM, isVisible, isInteractive, getRole, getLabel, assignRef, refMap, getDirectText, handleUpload };`,
   );
 
   return fn(chrome, globalThis.window, globalThis.document);
@@ -263,6 +263,65 @@ describe('content.js snapshot', () => {
       funcs.buildSnapshot(); // First should work
       // The guard is reset after completion, so second works too
       funcs.buildSnapshot();
+    });
+  });
+
+  // ── handleUpload ───────────────────────────────────────────
+
+  describe('handleUpload', () => {
+    it('injects file into input[type=file] via DataTransfer', () => {
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      document.body.appendChild(fileInput);
+
+      // Assign ref so handleUpload can find it
+      funcs.buildSnapshot(); // populates refMap
+      const ref = '@e0';
+
+      const base64Data = btoa('hello file content');
+      const result = funcs.handleUpload({
+        ref,
+        fileName: 'test.txt',
+        mimeType: 'text/plain',
+        dataBase64: base64Data,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.fileName).toBe('test.txt');
+      expect(result.size).toBe(18); // 'hello file content'.length
+      expect(fileInput.files).toHaveLength(1);
+      expect(fileInput.files![0].name).toBe('test.txt');
+      expect(fileInput.files![0].type).toBe('text/plain');
+    });
+
+    it('auto-detects file input when ref is omitted', () => {
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      document.body.appendChild(fileInput);
+
+      const result = funcs.handleUpload({
+        fileName: 'photo.png',
+        mimeType: 'image/png',
+        dataBase64: btoa('png-data'),
+      });
+
+      expect(result.ok).toBe(true);
+      expect(fileInput.files).toHaveLength(1);
+    });
+
+    it('throws when element is not a file input', () => {
+      const textInput = document.createElement('input');
+      textInput.type = 'text';
+      document.body.appendChild(textInput);
+
+      funcs.buildSnapshot();
+
+      expect(() => funcs.handleUpload({
+        ref: '@e0',
+        fileName: 'test.txt',
+        mimeType: 'text/plain',
+        dataBase64: btoa('data'),
+      })).toThrow('not a file input');
     });
   });
 });
