@@ -20,16 +20,21 @@ npm run coverage   # vitest --coverage
 
 ## Test Coverage
 
-| Module | Tests | Coverage |
-|--------|-------|----------|
-| bridge.ts | 123 | 95% Stmts, 84% Branch |
-| token.ts | 19 | 100% |
-| site-knowledge.ts | 39 | 93% Stmts |
-| screen.ts | 28 | 100% |
-| content-snapshot | 25 | — (happy-dom, incl. upload + password masking) |
-| server.ts | 63 | 68% Stmts |
-| other modules | 34 | — |
-| **Total** | **331** | 77% Stmts overall |
+| Module | Stmts | Branch | Notes |
+|--------|-------|--------|-------|
+| bridge.ts | 94% | 84% | WS mock-based lifecycle tests |
+| token.ts | 100% | 100% | JWT HS256 sign/verify |
+| site-knowledge.ts | 92% | 78% | AES-256-GCM encryption + redaction |
+| tools.ts | 100% | 100% | Schema + tools↔handler sync |
+| auto-login.ts | 95% | 88% | SSO chain + credentials |
+| action-recorder.ts | 98% | 91% | Recording/replay |
+| page-watch.ts | 96% | 88% | Page change monitoring |
+| workflow-runner.ts | 97% | 96% | Workflow validation |
+| snapshot-diff.ts | 100% | 100% | Diff comparison |
+| screenshot-compare.ts | 100% | 92% | Visual regression |
+| server.ts | 53% | 35% | 124 handlers, many need browser |
+| screen.ts | 51% | 40% | Platform-dependent (macOS/Linux) |
+| **Total (562 tests)** | **66%** | **46%** | 18 test files |
 
 ## Tools
 
