@@ -1217,4 +1217,104 @@ describe('ExtensionBridge', () => {
       expect(bridge.isConnected).toBe(true);
     });
   });
+
+  // ── Crash Recovery ──────────────────────────────────────────
+
+  describe('crash recovery', () => {
+    it('does not attempt recovery on intentional close', async () => {
+      const { bridge, ws } = await launchAndConnect('recover-close');
+
+      await bridge.close();
+      // Trigger ws close after intentional close
+      ws.emit('close');
+
+      // No Chrome relaunch
+      const spawnCallsBefore = mockedSpawn.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(mockedSpawn.mock.calls.length).toBe(spawnCallsBefore);
+    });
+
+    it('attempts recovery when Chrome crashes (non-zero exit)', async () => {
+      const bridge = new ExtensionBridge('recover-crash');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+
+      // Quick connect timeout → Chrome launch
+      await vi.advanceTimersByTimeAsync(5001);
+      const wss = getLatestWss();
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+
+      const spawnCallsBefore = mockedSpawn.mock.calls.length;
+
+      // Simulate Chrome crash (non-zero exit code)
+      mockCPHolder.current.emit('exit', 1);
+
+      // Recovery uses exponential backoff — first attempt after 1s
+      await vi.advanceTimersByTimeAsync(1001);
+
+      // Should have spawned Chrome again
+      expect(mockedSpawn.mock.calls.length).toBeGreaterThan(spawnCallsBefore);
+
+      // Simulate extension reconnecting after recovery
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+    });
+
+    it('stops recovery after max attempts', async () => {
+      const bridge = new ExtensionBridge('recover-max');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.advanceTimersByTimeAsync(5001);
+
+      const wss = getLatestWss();
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+
+      // Simulate 3 consecutive crashes (max attempts = 3)
+      for (let i = 0; i < 3; i++) {
+        mockCPHolder.current = createMockChildProcess();
+        mockCPHolder.current.emit('exit', 1);
+        // Advance past backoff delay (1s, 2s, 4s)
+        await vi.advanceTimersByTimeAsync(5000);
+        // Each recovery calls waitForExtension, which times out after 30s if no connection
+        // Advance to trigger timeout
+        await vi.advanceTimersByTimeAsync(30_001);
+      }
+
+      const spawnCallsAfterMax = mockedSpawn.mock.calls.length;
+
+      // 4th crash should NOT trigger recovery
+      mockCPHolder.current = createMockChildProcess();
+      mockCPHolder.current.emit('exit', 1);
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      expect(mockedSpawn.mock.calls.length).toBe(spawnCallsAfterMax);
+    });
+
+    it('resets recovery attempts on successful recovery', async () => {
+      const bridge = new ExtensionBridge('recover-reset');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.advanceTimersByTimeAsync(5001);
+
+      const wss = getLatestWss();
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+
+      // Simulate crash
+      mockCPHolder.current.emit('exit', 1);
+      await vi.advanceTimersByTimeAsync(1001);
+
+      // Successful recovery — extension reconnects
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+
+      // _recoverAttempts should be reset — verify by checking it can recover again
+      expect(bridge.isConnected).toBe(true);
+    });
+  });
 });

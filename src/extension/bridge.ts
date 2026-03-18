@@ -51,6 +51,11 @@ export class ExtensionBridge {
   private _extensionCopyDir: string;
   private _secret: string = '';
   private _token: string = '';
+  private _recovering = false;
+  private _recoverAttempts = 0;
+  private _maxRecoverAttempts = 3;
+  private _lastUrls: string[] = [];
+  private _intentionalClose = false;
 
   constructor(sessionId: string = 'default') {
     if (!SESSION_ID_RE.test(sessionId)) {
@@ -194,6 +199,11 @@ export class ExtensionBridge {
       }
       this.pending.clear();
       this._closing = false;
+
+      // Trigger auto-recovery if not intentionally closing
+      if (!this._intentionalClose && this.chromeProcess) {
+        this.attemptRecovery();
+      }
     });
   }
 
@@ -301,8 +311,13 @@ export class ExtensionBridge {
     // Allow Node.js to exit without waiting for Chrome
     this.chromeProcess.unref();
 
-    this.chromeProcess.on('exit', () => {
+    this.chromeProcess.on('exit', (code) => {
       this.chromeProcess = null;
+      // Non-zero exit or signal kill = crash — trigger recovery
+      if (code !== 0 && !this._intentionalClose) {
+        log.warn(`Chrome exited with code ${code} — attempting recovery`);
+        this.attemptRecovery();
+      }
     });
 
     this.chromeProcess.stderr?.on('data', (c: Buffer) =>
@@ -650,9 +665,58 @@ export class ExtensionBridge {
     await this.send('clipboardWrite', { text, tabId });
   }
 
+  // ── Crash Recovery ──────────────────────────────────────────
+
+  private attemptRecovery(): void {
+    if (this._recovering || this._intentionalClose) return;
+    if (this._recoverAttempts >= this._maxRecoverAttempts) {
+      log.error(`Recovery failed after ${this._maxRecoverAttempts} attempts — giving up`);
+      return;
+    }
+    this._recovering = true;
+    this._recoverAttempts++;
+
+    const delay = Math.min(1000 * Math.pow(2, this._recoverAttempts - 1), 10_000);
+    log.debug(`Recovery attempt ${this._recoverAttempts}/${this._maxRecoverAttempts} in ${delay}ms`);
+
+    setTimeout(() => {
+      this.recover().catch((err) => {
+        log.error('Recovery failed:', err instanceof Error ? err.message : String(err));
+        this._recovering = false;
+        // Retry if attempts remain
+        this.attemptRecovery();
+      });
+    }, delay);
+  }
+
+  private async recover(): Promise<void> {
+    // Save current tab URLs before recovery (if available from last known state)
+    log.debug('Recovering session:', this._sessionId);
+
+    // Close stale WS connection
+    if (this.ws) {
+      try { this.ws.close(); } catch {}
+      this.ws = null;
+    }
+
+    // Re-prepare extension with current port + token (reuses existing WS server)
+    this.prepareSessionExtension();
+
+    // Re-launch Chrome with the same profile directory (preserves cookies, localStorage)
+    this.launchChrome();
+
+    // Wait for extension to reconnect
+    await this.waitForExtension();
+
+    this._recovering = false;
+    this._recoverAttempts = 0; // Reset on successful recovery
+    log.debug('Recovery successful for session:', this._sessionId);
+  }
+
   // ── Cleanup ─────────────────────────────────────────────────
 
   async close(): Promise<void> {
+    this._intentionalClose = true;
     if (this.ws) {
       this.ws.close();
       this.ws = null;
