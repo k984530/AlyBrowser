@@ -1,6 +1,6 @@
 {
   "name": "aly-browser",
-  "version": "0.4.2",
+  "version": "1.0.0",
   "description": "Lightweight browser SDK for AI agents — accessibility tree snapshots with @eN ref IDs via Chrome Extension bridge",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -23,7 +23,8 @@
   },
   "files": [
     "dist",
-    "extension"
+    "extension",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsup",
@@ -32,18 +33,29 @@
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc --noEmit",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "keywords": [
     "browser",
     "automation",
     "chrome",
     "ai",
-    "accessibility"
+    "accessibility",
+    "mcp",
+    "agent"
   ],
   "license": "MIT",
   "engines": {
     "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlyBrowser/aly-browser.git"
+  },
+  "homepage": "https://github.com/AlyBrowser/aly-browser#readme",
+  "bugs": {
+    "url": "https://github.com/AlyBrowser/aly-browser/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
