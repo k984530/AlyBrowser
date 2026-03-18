@@ -287,6 +287,43 @@ describe('SiteKnowledge', () => {
       expect(result).not.toContain('abc');
       expect(result).not.toContain('xyz');
     });
+
+    // Korean sensitive data patterns
+    it('redacts Korean resident registration number (주민등록번호)', () => {
+      const result = redactSensitive('주민번호 950101-1234567 입력');
+      expect(result).not.toContain('950101-1234567');
+      expect(result).toContain('[REDACTED]');
+    });
+
+    it('redacts Korean passport number (여권번호)', () => {
+      const result = redactSensitive('여권 M12345678 확인');
+      expect(result).not.toContain('M12345678');
+      expect(result).toContain('[REDACTED]');
+    });
+
+    it('redacts Korean driver license number (운전면허번호)', () => {
+      const result = redactSensitive('면허 12-34-567890-12 등록');
+      expect(result).not.toContain('12-34-567890-12');
+      expect(result).toContain('[REDACTED]');
+    });
+
+    it('redacts Korean bank account number (계좌번호)', () => {
+      const result = redactSensitive('계좌 110-123-456789 이체');
+      expect(result).not.toContain('110-123-456789');
+      expect(result).toContain('[REDACTED]');
+    });
+
+    it('redacts Korean phone number (전화번호)', () => {
+      const result = redactSensitive('연락처 010-1234-5678 입니다');
+      expect(result).not.toContain('010-1234-5678');
+      expect(result).toContain('[REDACTED]');
+    });
+
+    it('redacts Korean landline number', () => {
+      const result = redactSensitive('사무실 02-123-4567 전화');
+      expect(result).not.toContain('02-123-4567');
+      expect(result).toContain('[REDACTED]');
+    });
   });
 
   // ── Encrypted Storage ──────────────────────────────────────────

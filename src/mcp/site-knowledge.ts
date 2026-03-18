@@ -39,6 +39,16 @@ const SENSITIVE_PATTERNS = [
   /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\s*[:]\s*\S+/g,
   // Credit card numbers (basic 13-19 digit)
   /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{1,7}\b/g,
+  // Korean resident registration number (주민등록번호: 6digits-7digits)
+  /\b\d{6}[\s-]\d{7}\b/g,
+  // Korean passport number (여권번호: M or S + 8 digits)
+  /\b[MS]\d{8}\b/g,
+  // Korean driver license number (운전면허번호: 2digits-2digits-6digits-2digits)
+  /\b\d{2}-\d{2}-\d{6}-\d{2}\b/g,
+  // Korean bank account number (계좌번호: 10-16 digit sequences with hyphens)
+  /\b\d{3,6}-\d{2,6}-\d{2,8}\b/g,
+  // Korean phone number (전화번호: 010-XXXX-XXXX or 02-XXX-XXXX)
+  /\b0\d{1,2}-\d{3,4}-\d{4}\b/g,
 ];
 
 /** Replace sensitive patterns with [REDACTED] */
