@@ -563,6 +563,18 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Permissions ──────────────────────────────────────────
+  {
+    name: 'browser_permissions_check',
+    description:
+      'Check browser permission states: geolocation, notifications, camera, microphone, clipboard. ' +
+      'Reports granted/denied/prompt status for each.',
+    inputSchema: {
+      type: 'object',
+      properties: { ...tabIdProp, ...sessionIdProp },
+    },
+  },
+
   // ── IndexedDB ────────────────────────────────────────────
   {
     name: 'browser_indexeddb_list',

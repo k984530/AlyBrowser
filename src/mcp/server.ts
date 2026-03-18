@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Permissions
+      case 'browser_permissions_check':
+        return this.handlePermissionsCheck(args);
+
       // IndexedDB
       case 'browser_indexeddb_list':
         return this.handleIndexedDbList(args);
@@ -1129,6 +1133,31 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Permissions ──────────────────────────────────────────
+
+  private async handlePermissionsCheck(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(async () => {
+      const names = ['geolocation','notifications','camera','microphone','clipboard-read','clipboard-write','persistent-storage'];
+      const results = [];
+      for (const name of names) {
+        try {
+          const status = await navigator.permissions.query({ name });
+          results.push({ name, state: status.state });
+        } catch { results.push({ name, state: 'unsupported' }); }
+      }
+      return JSON.stringify(results);
+    })()`, tabId);
+
+    const perms = typeof result === 'string' ? JSON.parse(result) : result;
+    const icon = (s: string) => s === 'granted' ? '✓' : s === 'denied' ? '✗' : s === 'prompt' ? '?' : '—';
+    const lines = ['[Permissions]'];
+    for (const p of perms) lines.push(`  ${icon(p.state)} ${p.name}: ${p.state}`);
     return textResult(lines.join('\n'));
   }
 
