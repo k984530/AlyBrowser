@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Color Picker
+      case 'browser_color_picker':
+        return this.handleColorPicker(args);
+
       // Dialog Handler
       case 'browser_dialog_handler':
         return this.handleDialogHandler(args);
@@ -970,6 +974,48 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Color Picker ──────────────────────────────────────────
+
+  private async handleColorPicker(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const colors = { bg: {}, text: {}, border: {} };
+      const sample = [...document.querySelectorAll('*')].slice(0, 500);
+      for (const el of sample) {
+        if (el.offsetParent === null && el.tagName !== 'BODY' && el.tagName !== 'HTML') continue;
+        const cs = getComputedStyle(el);
+        const bg = cs.backgroundColor;
+        const fg = cs.color;
+        const bd = cs.borderColor;
+        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') colors.bg[bg] = (colors.bg[bg] || 0) + 1;
+        if (fg) colors.text[fg] = (colors.text[fg] || 0) + 1;
+        if (bd && bd !== bg && bd !== 'rgba(0, 0, 0, 0)') colors.border[bd] = (colors.border[bd] || 0) + 1;
+      }
+      const sort = (obj) => Object.entries(obj).sort((a,b) => b[1] - a[1]).slice(0, 10).map(([c, n]) => ({ color: c, count: n }));
+      return JSON.stringify({ backgrounds: sort(colors.bg), textColors: sort(colors.text), borders: sort(colors.border) });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = ['[Color Palette]'];
+
+    if (data.backgrounds.length) {
+      lines.push('', '── Backgrounds ──');
+      for (const c of data.backgrounds) lines.push(`  ${c.color} (${c.count}x)`);
+    }
+    if (data.textColors.length) {
+      lines.push('', '── Text Colors ──');
+      for (const c of data.textColors) lines.push(`  ${c.color} (${c.count}x)`);
+    }
+    if (data.borders.length) {
+      lines.push('', '── Borders ──');
+      for (const c of data.borders) lines.push(`  ${c.color} (${c.count}x)`);
+    }
 
     return textResult(lines.join('\n'));
   }

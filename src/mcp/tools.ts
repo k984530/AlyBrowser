@@ -563,6 +563,22 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Color Picker ──────────────────────────────────────────
+  {
+    name: 'browser_color_picker',
+    description:
+      'Extract the color palette from the current page. Analyzes background colors, text colors, ' +
+      'and accent colors. Returns unique colors sorted by frequency. Useful for design auditing ' +
+      'and brand consistency checks.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Dialog Handler ────────────────────────────────────────
   {
     name: 'browser_dialog_handler',
