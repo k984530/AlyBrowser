@@ -128,6 +128,20 @@ describe('ActionRecorder', () => {
     expect(rec!.actions[1].timestamp).toBeGreaterThanOrEqual(before);
   });
 
+  it('import rejects invalid JSON structure', () => {
+    const ar = new ActionRecorder();
+    expect(() => ar.import('"string"')).toThrow('not an object');
+    expect(() => ar.import('{}')).toThrow('missing name');
+    expect(() => ar.import('{"name":"x"}')).toThrow('missing url');
+    expect(() => ar.import('{"name":"x","url":"y"}')).toThrow('actions must be an array');
+  });
+
+  it('import rejects invalid action types', () => {
+    const ar = new ActionRecorder();
+    const bad = JSON.stringify({ name: 'x', url: 'y', actions: [{ action: 'evil_exec' }] });
+    expect(() => ar.import(bad)).toThrow('Invalid action type: evil_exec');
+  });
+
   it('import assigns new ID if missing', () => {
     const ar = new ActionRecorder();
     const imported = ar.import(JSON.stringify({ name: 'no-id', url: 'https://x.com', actions: [], startedAt: 0 }));

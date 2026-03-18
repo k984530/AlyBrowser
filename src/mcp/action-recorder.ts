@@ -86,10 +86,32 @@ export class ActionRecorder {
     return rec ? JSON.stringify(rec, null, 2) : null;
   }
 
-  /** Import recording from JSON */
+  /** Import recording from JSON with validation */
   import(json: string): Recording {
-    const rec = JSON.parse(json) as Recording;
-    if (!rec.id) rec.id = `rec-${this.nextId++}`;
+    const raw = JSON.parse(json);
+
+    // Validate required fields
+    if (!raw || typeof raw !== 'object') throw new Error('Invalid recording: not an object');
+    if (typeof raw.name !== 'string') throw new Error('Invalid recording: missing name');
+    if (typeof raw.url !== 'string') throw new Error('Invalid recording: missing url');
+    if (!Array.isArray(raw.actions)) throw new Error('Invalid recording: actions must be an array');
+
+    // Validate action types
+    const validActions = new Set(['navigate', 'click', 'type', 'select', 'scroll', 'wait', 'snapshot']);
+    for (const action of raw.actions) {
+      if (!action || typeof action.action !== 'string' || !validActions.has(action.action)) {
+        throw new Error(`Invalid action type: ${action?.action}`);
+      }
+    }
+
+    const rec: Recording = {
+      id: raw.id || `rec-${this.nextId++}`,
+      name: raw.name,
+      url: raw.url,
+      actions: raw.actions,
+      startedAt: raw.startedAt || Date.now(),
+      stoppedAt: raw.stoppedAt,
+    };
     this.recordings.set(rec.id, rec);
     return rec;
   }
