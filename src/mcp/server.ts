@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Timezone
+      case 'browser_timezone_set':
+        return this.handleTimezoneSet(args);
+
       // User Agent
       case 'browser_user_agent_set':
         return this.handleUserAgentSet(args);
@@ -1067,6 +1071,34 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Timezone ─────────────────────────────────────────────
+
+  private async handleTimezoneSet(args: Record<string, unknown>): Promise<ToolResult> {
+    const tz = this.requireString(args, 'timezone');
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const tz = ${JSON.stringify(tz)};
+      // Validate timezone
+      try { new Intl.DateTimeFormat('en', { timeZone: tz }); } catch { return JSON.stringify({ error: 'Invalid timezone: ' + tz }); }
+
+      const OrigDTF = Intl.DateTimeFormat;
+      Intl.DateTimeFormat = function(locale, opts) {
+        return new OrigDTF(locale, { ...opts, timeZone: opts?.timeZone || tz });
+      };
+      Intl.DateTimeFormat.prototype = OrigDTF.prototype;
+      Intl.DateTimeFormat.supportedLocalesOf = OrigDTF.supportedLocalesOf;
+
+      const now = new Date().toLocaleString('en', { timeZone: tz });
+      return JSON.stringify({ ok: true, timezone: tz, localTime: now });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    if (data.error) return errorResult(data.error);
+    return textResult(`[Timezone] Set to ${data.timezone} (current: ${data.localTime})`);
   }
 
   // ── User Agent ───────────────────────────────────────────

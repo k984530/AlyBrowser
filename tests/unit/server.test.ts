@@ -443,6 +443,11 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_timezone_set requires timezone', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_timezone_set', {})).rejects.toThrow('"timezone" must be a non-empty string');
+  });
+
   it('browser_user_agent_set requires preset or custom', async () => {
     const mcp = create();
     const result = await (mcp as any).handleTool('browser_user_agent_set', {});

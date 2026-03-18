@@ -563,6 +563,23 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Timezone ─────────────────────────────────────────────
+  {
+    name: 'browser_timezone_set',
+    description:
+      'Override Intl.DateTimeFormat timezone to emulate different time zones. ' +
+      'Useful for testing time-sensitive UI without changing system clock.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        timezone: { type: 'string', description: 'IANA timezone (e.g., "Asia/Tokyo", "America/New_York", "Europe/London")' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['timezone'],
+    },
+  },
+
   // ── User Agent ───────────────────────────────────────────
   {
     name: 'browser_user_agent_set',
