@@ -253,6 +253,58 @@ Chrome crashes are auto-detected and recovered:
 |----------|---------|-------------|
 | `ALY_REQUIRE_AUTH` | (unset) | Set to `1` to reject WS connections without a valid JWT token |
 
+## AI Framework Integration
+
+AlyBrowser is MCP-native and works with any MCP-compatible AI framework.
+
+### LangChain
+
+```python
+# pip install langchain-mcp-adapters
+from langchain_mcp_adapters import MCPToolkit
+
+toolkit = MCPToolkit(server_command="npx", server_args=["aly-browser-mcp"])
+tools = toolkit.get_tools()
+# Use tools in your LangChain agent
+```
+
+### CrewAI
+
+```yaml
+# crewai.yaml
+tools:
+  - type: mcp
+    command: npx
+    args: ["aly-browser-mcp"]
+```
+
+### Claude Code
+
+```json
+{
+  "mcpServers": {
+    "aly-browser": {
+      "command": "npx",
+      "args": ["aly-browser-mcp"]
+    }
+  }
+}
+```
+
+### Direct SDK Usage
+
+```typescript
+import { ExtensionBridge } from 'aly-browser';
+
+const browser = new ExtensionBridge('session-1');
+await browser.launch({ url: 'https://example.com' });
+
+// Full API: snapshot, click, type, evaluate, upload, cookies...
+const tree = await browser.snapshot();
+await browser.click('@e1');
+await browser.close();
+```
+
 ## Requirements
 
 - Node.js >= 18
