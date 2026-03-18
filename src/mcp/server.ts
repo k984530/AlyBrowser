@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // JS Coverage
+      case 'browser_js_coverage':
+        return this.handleJsCoverage(args);
+
       // Core Web Vitals
       case 'browser_web_vitals':
         return this.handleWebVitals(args);
@@ -1090,6 +1094,71 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── JS Coverage ──────────────────────────────────────────
+
+  private async handleJsCoverage(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const scripts = [...document.querySelectorAll('script')];
+      const host = location.hostname;
+      let inlineCount = 0, inlineSize = 0, externalCount = 0;
+      const externals = [];
+      const blocking = [];
+
+      for (const s of scripts) {
+        if (s.src) {
+          externalCount++;
+          const isThirdParty = !s.src.includes(host);
+          const entry = { src: s.src.slice(0, 120), thirdParty: isThirdParty, async: s.async, defer: s.defer };
+          externals.push(entry);
+          if (!s.async && !s.defer && !s.type?.includes('module')) blocking.push(entry.src);
+        } else {
+          inlineCount++;
+          inlineSize += (s.textContent || '').length;
+        }
+      }
+
+      // Resource timing for transfer sizes
+      const jsResources = performance.getEntriesByType('resource').filter(r => r.initiatorType === 'script');
+      const totalTransfer = jsResources.reduce((s, r) => s + (r.transferSize || 0), 0);
+      const thirdParty = externals.filter(e => e.thirdParty);
+
+      return JSON.stringify({
+        inline: { count: inlineCount, size: inlineSize },
+        external: { count: externalCount, transfer: totalTransfer },
+        blocking: blocking.length,
+        thirdParty: thirdParty.length,
+        topScripts: externals.slice(0, 10),
+        blockingScripts: blocking.slice(0, 5),
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const fmt = (b: number) => b > 1024 ? `${(b / 1024).toFixed(1)}KB` : `${b}B`;
+
+    const lines = [
+      `[JS Coverage]`,
+      `  Inline: ${data.inline.count} scripts (${fmt(data.inline.size)})`,
+      `  External: ${data.external.count} scripts (${fmt(data.external.transfer)} transfer)`,
+      `  Render-blocking: ${data.blocking}`,
+      `  Third-party: ${data.thirdParty}`,
+    ];
+    if (data.blockingScripts.length) {
+      lines.push('', '── Render-Blocking ──');
+      for (const s of data.blockingScripts) lines.push(`  ${s.slice(0, 80)}`);
+    }
+    if (data.topScripts.length) {
+      lines.push('', '── Scripts ──');
+      for (const s of data.topScripts) {
+        const flags = [s.async ? 'async' : '', s.defer ? 'defer' : '', s.thirdParty ? '3P' : ''].filter(Boolean).join(',');
+        lines.push(`  [${flags || 'sync'}] ${s.src.slice(0, 80)}`);
+      }
+    }
     return textResult(lines.join('\n'));
   }
 

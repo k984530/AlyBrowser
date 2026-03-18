@@ -563,6 +563,21 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── JS Coverage ──────────────────────────────────────────
+  {
+    name: 'browser_js_coverage',
+    description:
+      'Analyze JavaScript usage: count inline/external scripts, estimate total JS size, ' +
+      'detect render-blocking scripts, and list third-party scripts. Useful for JS diet.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Core Web Vitals ──────────────────────────────────────
   {
     name: 'browser_web_vitals',
