@@ -590,6 +590,10 @@ export class AlyBrowserMCPServer {
       case 'screen_scroll':
         return this.handleScreenScroll(args);
 
+      // WebSocket Monitor
+      case 'browser_websocket_monitor':
+        return this.handleWebSocketMonitor(args);
+
       default:
         return errorResult(`Unknown tool: ${name}`);
     }
@@ -4446,6 +4450,115 @@ export class AlyBrowserMCPServer {
     };
     process.on('SIGINT', this._onExit);
     process.on('SIGTERM', this._onExit);
+  }
+
+  // ── WebSocket Monitor ─────────────────────────────────────
+
+  private async handleWebSocketMonitor(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const action = (args.action as string) || 'read';
+
+    if (action === 'start') {
+      await bridge.evaluate(`(() => {
+        if (window.__alyWsMonitor) return 'already_installed';
+        window.__alyWsMonitor = { messages: [], connections: [] };
+        const OrigWS = window.WebSocket;
+        window.__alyOrigWebSocket = OrigWS;
+        const maxEntries = 200;
+        const mask = (s) => {
+          if (typeof s !== 'string') return s;
+          return s
+            .replace(/eyJ[A-Za-z0-9_-]{20,}\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*/g, '[JWT]')
+            .replace(/(?:password|passwd|token|secret|api_key|apikey)['"\\s]*[:=]['"\\s]*[^'"\\s,}{\\]]{3,}/gi, '[REDACTED]')
+            .replace(/[a-f0-9]{32,}/gi, (m) => m.length >= 40 ? '[HEX_SECRET]' : m);
+        };
+        window.WebSocket = function(url, protocols) {
+          const ws = protocols ? new OrigWS(url, protocols) : new OrigWS(url);
+          const id = window.__alyWsMonitor.connections.length;
+          window.__alyWsMonitor.connections.push({ id, url, readyState: ws.readyState, ts: Date.now() });
+          const origSend = ws.send.bind(ws);
+          ws.send = (data) => {
+            if (window.__alyWsMonitor.messages.length >= maxEntries) window.__alyWsMonitor.messages.shift();
+            const text = typeof data === 'string' ? data : '<binary ' + (data.byteLength || data.size || 0) + 'B>';
+            window.__alyWsMonitor.messages.push({ dir: 'send', connId: id, data: mask(text.slice(0, 500)), ts: Date.now() });
+            return origSend(data);
+          };
+          ws.addEventListener('message', (e) => {
+            if (window.__alyWsMonitor.messages.length >= maxEntries) window.__alyWsMonitor.messages.shift();
+            const text = typeof e.data === 'string' ? e.data : '<binary>';
+            window.__alyWsMonitor.messages.push({ dir: 'recv', connId: id, data: mask(text.slice(0, 500)), ts: Date.now() });
+          });
+          ws.addEventListener('close', () => {
+            const conn = window.__alyWsMonitor.connections[id];
+            if (conn) conn.readyState = 3;
+          });
+          return ws;
+        };
+        window.WebSocket.prototype = OrigWS.prototype;
+        window.WebSocket.CONNECTING = OrigWS.CONNECTING;
+        window.WebSocket.OPEN = OrigWS.OPEN;
+        window.WebSocket.CLOSING = OrigWS.CLOSING;
+        window.WebSocket.CLOSED = OrigWS.CLOSED;
+        return 'installed';
+      })()`, tabId);
+
+      return textResult('[WebSocket Monitor] Interceptor installed. New WebSocket connections will be captured. Use action="read" to view messages.');
+    }
+
+    if (action === 'stop') {
+      await bridge.evaluate(`(() => {
+        if (window.__alyOrigWebSocket) {
+          window.WebSocket = window.__alyOrigWebSocket;
+          delete window.__alyOrigWebSocket;
+        }
+        delete window.__alyWsMonitor;
+        return 'removed';
+      })()`, tabId);
+
+      return textResult('[WebSocket Monitor] Interceptor removed.');
+    }
+
+    // action === 'read'
+    const result = await bridge.evaluate(`(() => {
+      if (!window.__alyWsMonitor) return JSON.stringify({ installed: false });
+      const data = {
+        installed: true,
+        connections: window.__alyWsMonitor.connections.map(c => ({
+          id: c.id, url: c.url, readyState: c.readyState,
+        })),
+        messages: [...window.__alyWsMonitor.messages],
+        total: window.__alyWsMonitor.messages.length,
+      };
+      window.__alyWsMonitor.messages = [];
+      return JSON.stringify(data);
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (!data.installed) {
+      return textResult('[WebSocket Monitor] Not installed. Call with action="start" first.');
+    }
+
+    if (data.messages.length === 0) {
+      const connInfo = data.connections.map(
+        (c: { id: number; url: string; readyState: number }) =>
+          `  #${c.id} ${c.url} (${c.readyState === 1 ? 'OPEN' : 'CLOSED'})`,
+      ).join('\n');
+      return textResult(`[WebSocket Monitor] ${data.connections.length} connection(s), no new messages.\n${connInfo}`);
+    }
+
+    const lines = [`[WebSocket Monitor] ${data.connections.length} connection(s), ${data.total} messages`];
+    for (const conn of data.connections as Array<{ id: number; url: string; readyState: number }>) {
+      lines.push(`  #${conn.id} ${conn.url} (${conn.readyState === 1 ? 'OPEN' : 'CLOSED'})`);
+    }
+    lines.push('');
+    for (const msg of (data.messages as Array<{ dir: string; connId: number; data: string; ts: number }>).slice(-30)) {
+      const arrow = msg.dir === 'send' ? '→' : '←';
+      lines.push(`  ${arrow} [#${msg.connId}] ${msg.data}`);
+    }
+
+    return textResult(lines.join('\n'));
   }
 
   /** Remove process signal listeners. Call when discarding this instance. */

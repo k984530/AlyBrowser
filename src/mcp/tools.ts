@@ -1780,4 +1780,22 @@ export const tools: ToolDefinition[] = [
       required: ['deltaY'],
     },
   },
+
+  // ── WebSocket Monitor ──────────────────────────────────────
+  {
+    name: 'browser_websocket_monitor',
+    description:
+      'Monitor WebSocket connections on the page. Intercepts WebSocket constructor to capture ' +
+      'all sent/received messages. Actions: "start" installs interceptor, "read" returns captured ' +
+      'messages and drains buffer, "stop" removes interceptor. Useful for debugging real-time apps ' +
+      '(chat, trading, notifications). Messages are truncated at 500 chars and sensitive data is masked.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['start', 'read', 'stop'], description: 'start, read (default), or stop' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
 ];

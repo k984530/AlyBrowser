@@ -1329,5 +1329,56 @@ describe('AlyBrowserMCPServer', () => {
       const result = await (mcp as any).handleTool('browser_storage_get', { key: 'mykey' });
       expect(result.isError).toBeFalsy();
     });
+
+    it('websocket_monitor start installs interceptor', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue('installed');
+
+      const result = await (mcp as any).handleTool('browser_websocket_monitor', { action: 'start' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Interceptor installed');
+      expect((bridge as any).evaluate).toHaveBeenCalled();
+    });
+
+    it('websocket_monitor read returns messages', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        installed: true,
+        connections: [{ id: 0, url: 'wss://api.example.com/ws', readyState: 1 }],
+        messages: [
+          { dir: 'send', connId: 0, data: '{"type":"ping"}', ts: Date.now() },
+          { dir: 'recv', connId: 0, data: '{"type":"pong"}', ts: Date.now() },
+        ],
+        total: 2,
+      }));
+
+      const result = await (mcp as any).handleTool('browser_websocket_monitor', { action: 'read' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('wss://api.example.com/ws');
+      expect(result.content[0].text).toContain('ping');
+      expect(result.content[0].text).toContain('pong');
+    });
+
+    it('websocket_monitor read when not installed', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({ installed: false }));
+
+      const result = await (mcp as any).handleTool('browser_websocket_monitor', { action: 'read' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Not installed');
+    });
+
+    it('websocket_monitor stop removes interceptor', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue('removed');
+
+      const result = await (mcp as any).handleTool('browser_websocket_monitor', { action: 'stop' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('removed');
+    });
   });
 });
