@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Shadow DOM Pierce
+      case 'browser_shadow_dom_pierce':
+        return this.handleShadowDomPierce(args);
+
       // JSON Extract
       case 'browser_json_extract':
         return this.handleJsonExtract(args);
@@ -1043,6 +1047,56 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Shadow DOM Pierce ────────────────────────────────────
+
+  private async handleShadowDomPierce(args: Record<string, unknown>): Promise<ToolResult> {
+    const pathStr = this.requireString(args, 'path');
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const action = (args.action as string) || 'query';
+
+    const result = await bridge.evaluate(`(() => {
+      const path = ${JSON.stringify(pathStr)};
+      const action = ${JSON.stringify(action)};
+      const segments = path.split('>>>').map(s => s.trim());
+
+      let root = document;
+      let el = null;
+      for (let i = 0; i < segments.length; i++) {
+        el = root.querySelector(segments[i]);
+        if (!el) return JSON.stringify({ error: 'Not found at segment: ' + segments[i] });
+        if (i < segments.length - 1) {
+          if (!el.shadowRoot) return JSON.stringify({ error: 'No shadow root on: ' + segments[i] });
+          root = el.shadowRoot;
+        }
+      }
+      if (!el) return JSON.stringify({ error: 'Element not found' });
+
+      if (action === 'click') {
+        el.click();
+        return JSON.stringify({ ok: true, action: 'clicked', tag: el.tagName.toLowerCase() });
+      }
+      if (action === 'text') {
+        return JSON.stringify({ ok: true, text: (el.textContent || '').trim().slice(0, 500) });
+      }
+      // query
+      const rect = el.getBoundingClientRect();
+      return JSON.stringify({
+        tag: el.tagName.toLowerCase(),
+        id: el.id || null,
+        text: (el.textContent || '').trim().slice(0, 100),
+        visible: el.checkVisibility ? el.checkVisibility() : rect.width > 0,
+        bounds: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    if (data.error) return errorResult(data.error);
+    if (data.ok && data.action === 'clicked') return textResult(`[Shadow] Clicked <${data.tag}> via ${pathStr}`);
+    if (data.ok && data.text !== undefined) return textResult(`[Shadow] Text: "${data.text}"`);
+    return textResult(`[Shadow] <${data.tag}${data.id ? '#' + data.id : ''}> ${data.bounds.w}x${data.bounds.h} at (${data.bounds.x},${data.bounds.y}) visible:${data.visible}\n  "${data.text}"`);
   }
 
   // ── JSON Extract ─────────────────────────────────────────

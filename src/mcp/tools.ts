@@ -563,6 +563,25 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Shadow DOM Pierce ────────────────────────────────────
+  {
+    name: 'browser_shadow_dom_pierce',
+    description:
+      'Query elements inside Shadow DOM using a piercing selector path. ' +
+      'Syntax: "host-selector >>> shadow-selector". Traverses open shadow roots. ' +
+      'Returns matching element info or clicks/types into shadow elements.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Piercing path (e.g., "my-component >>> .inner-btn")' },
+        action: { type: 'string', enum: ['query', 'click', 'text'], description: 'query (default), click, or get text' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['path'],
+    },
+  },
+
   // ── JSON Extract ─────────────────────────────────────────
   {
     name: 'browser_json_extract',
