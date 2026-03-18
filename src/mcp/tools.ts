@@ -563,6 +563,22 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Page Text ──────────────────────────────────────────────
+  {
+    name: 'browser_text_content',
+    description:
+      'Extract all visible text content from the current page, organized by sections. ' +
+      'More structured than browser_html, less noisy than browser_snapshot. ' +
+      'Returns headings, paragraphs, lists, and other text blocks in reading order.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Data Extraction ────────────────────────────────────────
   {
     name: 'browser_table_extract',

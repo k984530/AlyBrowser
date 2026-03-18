@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Page Text
+      case 'browser_text_content':
+        return this.handleTextContent(args);
+
       // Data Extraction
       case 'browser_table_extract':
         return this.handleTableExtract(args);
@@ -910,6 +914,66 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Page Text ──────────────────────────────────────────────
+
+  private async handleTextContent(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const blocks = [];
+      const walk = (el) => {
+        if (!el || !el.tagName) return;
+        const tag = el.tagName.toLowerCase();
+        if (['script','style','noscript','meta','link','template'].includes(tag)) return;
+        if (el.offsetParent === null && tag !== 'body' && tag !== 'html') return;
+
+        if (['h1','h2','h3','h4','h5','h6'].includes(tag)) {
+          const text = el.textContent.trim();
+          if (text) blocks.push({ type: tag, text: text.slice(0, 300) });
+        } else if (tag === 'p') {
+          const text = el.textContent.trim();
+          if (text) blocks.push({ type: 'p', text: text.slice(0, 500) });
+        } else if (tag === 'li') {
+          const text = el.textContent.trim();
+          if (text) blocks.push({ type: 'li', text: text.slice(0, 300) });
+        } else if (tag === 'blockquote') {
+          const text = el.textContent.trim();
+          if (text) blocks.push({ type: 'quote', text: text.slice(0, 500) });
+        } else if (tag === 'pre' || tag === 'code') {
+          const text = el.textContent.trim();
+          if (text) blocks.push({ type: 'code', text: text.slice(0, 1000) });
+        } else {
+          for (const child of el.children) walk(child);
+          return;
+        }
+        // Don't recurse into already-captured elements
+      };
+      walk(document.body);
+      return JSON.stringify({ title: document.title, blocks: blocks.slice(0, 100), total: blocks.length });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = [`[Text Content] "${data.title}" — ${data.total} blocks`];
+
+    for (const b of data.blocks) {
+      if (b.type.startsWith('h')) {
+        lines.push('', `${'#'.repeat(parseInt(b.type[1]))} ${b.text}`);
+      } else if (b.type === 'li') {
+        lines.push(`  • ${b.text}`);
+      } else if (b.type === 'quote') {
+        lines.push(`  > ${b.text}`);
+      } else if (b.type === 'code') {
+        lines.push(`  \`\`\`${b.text.slice(0, 200)}\`\`\``);
+      } else {
+        lines.push(b.text);
+      }
+    }
+    if (data.total > 100) lines.push(`\n... ${data.total - 100} more blocks`);
 
     return textResult(lines.join('\n'));
   }
