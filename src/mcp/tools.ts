@@ -548,6 +548,21 @@ export const tools: ToolDefinition[] = [
     inputSchema: { type: 'object', properties: {} },
   },
 
+  // ── Performance ──────────────────────────────────────────
+  {
+    name: 'browser_perf_metrics',
+    description:
+      'Collect page performance metrics: load timing, DOM size, resource count, memory usage. ' +
+      'Useful for performance audits, identifying slow pages, and monitoring page complexity.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Top Sites ──────────────────────────────────────────────
   {
     name: 'browser_top_sites',

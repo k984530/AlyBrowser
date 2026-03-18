@@ -443,6 +443,16 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_perf_metrics throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_perf_metrics', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_snapshot_diff throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_snapshot_diff', {})).rejects.toThrow('No browser session');
+  });
+
   // ── Frame depth calculation ──────────────────────────────────
 
   describe('handleFrameList depth computation', () => {

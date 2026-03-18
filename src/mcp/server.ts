@@ -297,6 +297,10 @@ export class AlyBrowserMCPServer {
       case 'browser_sleep':
         return this.handleSleep();
 
+      // Performance
+      case 'browser_perf_metrics':
+        return this.handlePerfMetrics(args);
+
       // Site Knowledge
       case 'browser_learn':
         return this.handleLearn(args);
@@ -804,6 +808,77 @@ export class AlyBrowserMCPServer {
   private async handleSleep(): Promise<ToolResult> {
     await new Promise((r) => setTimeout(r, 1000));
     return textResult('Waited 1 second.');
+  }
+
+  // ── Performance ────────────────────────────────────────────
+
+  private async handlePerfMetrics(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const metrics = await bridge.evaluate(`(() => {
+      const t = performance.timing;
+      const nav = performance.getEntriesByType('navigation')[0] || {};
+      const resources = performance.getEntriesByType('resource');
+      return JSON.stringify({
+        timing: {
+          domContentLoaded: t.domContentLoadedEventEnd - t.navigationStart,
+          load: t.loadEventEnd - t.navigationStart,
+          ttfb: t.responseStart - t.navigationStart,
+          domInteractive: t.domInteractive - t.navigationStart,
+          domComplete: t.domComplete - t.navigationStart,
+        },
+        dom: {
+          elements: document.querySelectorAll('*').length,
+          depth: (() => { let d=0,max=0; const walk=(el,lvl)=>{if(lvl>max)max=lvl; for(const c of el.children)walk(c,lvl+1);}; walk(document.body,0); return max; })(),
+          scripts: document.scripts.length,
+          stylesheets: document.styleSheets.length,
+          images: document.images.length,
+          forms: document.forms.length,
+          iframes: document.querySelectorAll('iframe').length,
+        },
+        resources: {
+          total: resources.length,
+          totalSize: resources.reduce((s,r) => s + (r.transferSize || 0), 0),
+          byType: resources.reduce((acc, r) => {
+            const ext = r.name.split('.').pop()?.split('?')[0] || 'other';
+            acc[ext] = (acc[ext] || 0) + 1;
+            return acc;
+          }, {}),
+        },
+        url: location.href,
+        title: document.title,
+      });
+    })()`, tabId);
+
+    const data = typeof metrics === 'string' ? JSON.parse(metrics) : metrics;
+
+    const lines = [
+      `[Performance Metrics] ${data.title}`,
+      `URL: ${data.url}`,
+      '',
+      '── Timing ──',
+      `  TTFB: ${data.timing.ttfb}ms`,
+      `  DOM Interactive: ${data.timing.domInteractive}ms`,
+      `  DOM Content Loaded: ${data.timing.domContentLoaded}ms`,
+      `  DOM Complete: ${data.timing.domComplete}ms`,
+      `  Full Load: ${data.timing.load}ms`,
+      '',
+      '── DOM ──',
+      `  Elements: ${data.dom.elements}`,
+      `  Max Depth: ${data.dom.depth}`,
+      `  Scripts: ${data.dom.scripts}`,
+      `  Stylesheets: ${data.dom.stylesheets}`,
+      `  Images: ${data.dom.images}`,
+      `  Forms: ${data.dom.forms}`,
+      `  Iframes: ${data.dom.iframes}`,
+      '',
+      '── Resources ──',
+      `  Total: ${data.resources.total}`,
+      `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
+    ];
+
+    return textResult(lines.join('\n'));
   }
 
   // ── Site Knowledge ─────────────────────────────────────────
