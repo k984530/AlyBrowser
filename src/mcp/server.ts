@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Element Inspector
+      case 'browser_element_info':
+        return this.handleElementInfo(args);
+
       // SEO
       case 'browser_meta_seo':
         return this.handleMetaSeo(args);
@@ -899,6 +903,84 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Element Inspector ──────────────────────────────────────
+
+  private async handleElementInfo(args: Record<string, unknown>): Promise<ToolResult> {
+    const selector = this.requireString(args, 'selector');
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const selectorJson = JSON.stringify(selector);
+    const result = await bridge.evaluate(`(() => {
+      const el = document.querySelector(${selectorJson});
+      if (!el) return JSON.stringify({ error: 'Element not found: ' + ${selectorJson} });
+
+      const rect = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      const attrs = {};
+      for (const a of el.attributes) attrs[a.name] = a.value;
+
+      return JSON.stringify({
+        tag: el.tagName.toLowerCase(),
+        id: el.id || null,
+        className: el.className || null,
+        text: (el.textContent || '').trim().slice(0, 200),
+        bounds: {
+          x: Math.round(rect.x),
+          y: Math.round(rect.y),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        },
+        styles: {
+          display: cs.display,
+          visibility: cs.visibility,
+          position: cs.position,
+          color: cs.color,
+          backgroundColor: cs.backgroundColor,
+          fontSize: cs.fontSize,
+          fontFamily: cs.fontFamily.slice(0, 60),
+          fontWeight: cs.fontWeight,
+          opacity: cs.opacity,
+          zIndex: cs.zIndex,
+          overflow: cs.overflow,
+        },
+        attributes: attrs,
+        childCount: el.children.length,
+        visible: el.checkVisibility ? el.checkVisibility() : rect.width > 0 && rect.height > 0,
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (data.error) {
+      return errorResult(data.error);
+    }
+
+    const lines = [
+      `[Element] <${data.tag}${data.id ? '#' + data.id : ''}${data.className ? '.' + String(data.className).split(' ').join('.') : ''}>`,
+      `  Text: "${data.text.slice(0, 80)}"`,
+      `  Visible: ${data.visible}`,
+      `  Children: ${data.childCount}`,
+      '',
+      '── Bounds ──',
+      `  x: ${data.bounds.x}, y: ${data.bounds.y}`,
+      `  width: ${data.bounds.width}, height: ${data.bounds.height}`,
+      '',
+      '── Styles ──',
+      `  display: ${data.styles.display}, position: ${data.styles.position}`,
+      `  color: ${data.styles.color}, bg: ${data.styles.backgroundColor}`,
+      `  font: ${data.styles.fontSize} ${data.styles.fontWeight} ${data.styles.fontFamily}`,
+      `  opacity: ${data.styles.opacity}, z-index: ${data.styles.zIndex}`,
+      '',
+      '── Attributes ──',
+    ];
+    for (const [k, v] of Object.entries(data.attributes)) {
+      lines.push(`  ${k}="${String(v).slice(0, 80)}"`);
+    }
 
     return textResult(lines.join('\n'));
   }

@@ -563,6 +563,24 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Element Inspector ──────────────────────────────────────
+  {
+    name: 'browser_element_info',
+    description:
+      'Get detailed information about a page element by CSS selector: bounding box (x, y, width, height), ' +
+      'computed styles (color, font, display, visibility, position), all HTML attributes, inner text, and tag name. ' +
+      'Useful for debugging layout issues, verifying styles, and understanding element state.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector (e.g., "#login-btn", ".header h1", "input[name=email]")' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['selector'],
+    },
+  },
+
   // ── SEO ────────────────────────────────────────────────────
   {
     name: 'browser_meta_seo',
