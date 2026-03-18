@@ -563,6 +563,23 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Element Remove ───────────────────────────────────────
+  {
+    name: 'browser_element_remove',
+    description:
+      'Remove elements from the page by CSS selector. Useful for cleaning up ads, banners, ' +
+      'sidebars, or any distracting elements before screenshots or scraping.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector of elements to remove' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['selector'],
+    },
+  },
+
   // ── CSS Coverage ─────────────────────────────────────────
   {
     name: 'browser_css_coverage',

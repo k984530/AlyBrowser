@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Element Remove
+      case 'browser_element_remove':
+        return this.handleElementRemove(args);
+
       // CSS Coverage
       case 'browser_css_coverage':
         return this.handleCssCoverage(args);
@@ -1083,6 +1087,24 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Element Remove ───────────────────────────────────────
+
+  private async handleElementRemove(args: Record<string, unknown>): Promise<ToolResult> {
+    const selector = this.requireString(args, 'selector');
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const els = document.querySelectorAll(${JSON.stringify(selector)});
+      const count = els.length;
+      els.forEach(el => el.remove());
+      return JSON.stringify({ removed: count });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    return textResult(`[Remove] ${data.removed} element(s) removed (${selector})`);
   }
 
   // ── CSS Coverage ─────────────────────────────────────────
