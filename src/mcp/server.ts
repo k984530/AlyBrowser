@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Print Preview
+      case 'browser_print_preview':
+        return this.handlePrintPreview(args);
+
       // Infinite Scroll
       case 'browser_infinite_scroll':
         return this.handleInfiniteScroll(args);
@@ -1050,6 +1054,44 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Print Preview ────────────────────────────────────────
+
+  private async handlePrintPreview(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const docH = document.documentElement.scrollHeight;
+      const docW = document.documentElement.scrollWidth;
+      // A4 at 96 DPI: 794 x 1123 px (with margins ~730 x 1050 usable)
+      const usableH = 1050;
+      const estPages = Math.ceil(docH / usableH);
+      const hasPrintCSS = [...document.styleSheets].some(ss => {
+        try { return ss.media?.mediaText?.includes('print') || [...ss.cssRules].some(r => r.media?.mediaText?.includes('print')); }
+        catch { return false; }
+      });
+      const printLinks = [...document.querySelectorAll('link[media*="print"]')].length;
+      const hiddenInPrint = document.querySelectorAll('.no-print, .hide-print, [data-print="hide"]').length;
+
+      return JSON.stringify({
+        docHeight: docH, docWidth: docW, estPages,
+        hasPrintCSS, printStylesheets: printLinks,
+        hiddenElements: hiddenInPrint,
+        title: document.title, url: location.href,
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = [
+      `[Print Preview] "${data.title}"`,
+      `  Estimated pages: ${data.estPages} (A4)`,
+      `  Document: ${data.docWidth}x${data.docHeight}px`,
+      `  Print CSS: ${data.hasPrintCSS ? 'Yes' : 'No'} (${data.printStylesheets} print stylesheets)`,
+      `  Elements hidden for print: ${data.hiddenElements}`,
+    ];
     return textResult(lines.join('\n'));
   }
 

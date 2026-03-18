@@ -563,6 +563,21 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Print to PDF ─────────────────────────────────────────
+  {
+    name: 'browser_print_preview',
+    description:
+      'Get print preview info: how many pages the current page would produce when printed, ' +
+      'paper size, margins, and print-specific CSS media query status. Useful for verifying print layouts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Infinite Scroll ──────────────────────────────────────
   {
     name: 'browser_infinite_scroll',
