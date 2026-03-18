@@ -305,6 +305,9 @@ export class AlyBrowserMCPServer {
       case 'browser_table_extract':
         return this.handleTableExtract(args);
 
+      case 'browser_link_extract':
+        return this.handleLinkExtract(args);
+
       // Element Inspector
       case 'browser_element_info':
         return this.handleElementInfo(args);
@@ -976,6 +979,36 @@ export class AlyBrowserMCPServer {
     }
     if (data.rowCount > 20) lines.push(`... ${data.rowCount - 20} more rows`);
 
+    return textResult(lines.join('\n'));
+  }
+
+  private async handleLinkExtract(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const filter = (args.filter as string) || 'all';
+
+    const result = await bridge.evaluate(`(() => {
+      const host = location.hostname;
+      const links = [...document.querySelectorAll('a[href]')].map(a => {
+        const href = a.href;
+        const text = (a.textContent || '').trim().slice(0, 100);
+        let type = 'external';
+        try { if (new URL(href).hostname === host) type = 'internal'; } catch {}
+        if (href.startsWith('#') || href.startsWith('javascript:')) type = 'fragment';
+        return { href: href.slice(0, 200), text, type };
+      });
+      const filter = ${JSON.stringify(filter)};
+      const filtered = filter === 'all' ? links : links.filter(l => l.type === filter);
+      return JSON.stringify({ total: links.length, filtered: filtered.length, links: filtered.slice(0, 100) });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = [`[Links] ${data.filtered} links${filter !== 'all' ? ` (${filter})` : ''} of ${data.total} total`];
+    for (const l of data.links) {
+      const tag = l.type === 'internal' ? 'INT' : l.type === 'external' ? 'EXT' : 'FRG';
+      lines.push(`  [${tag}] ${l.text || '(no text)'} → ${l.href}`);
+    }
+    if (data.filtered > 100) lines.push(`  ... ${data.filtered - 100} more`);
     return textResult(lines.join('\n'));
   }
 

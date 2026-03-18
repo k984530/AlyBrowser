@@ -579,6 +579,21 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  {
+    name: 'browser_link_extract',
+    description:
+      'Extract all links from the current page. Returns href, text, and whether internal/external. ' +
+      'Supports domain filter. Useful for crawling, sitemap generation, and broken link detection.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filter: { type: 'string', enum: ['all', 'internal', 'external'], description: 'Filter by link type (default: all)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Element Inspector ──────────────────────────────────────
   {
     name: 'browser_element_info',

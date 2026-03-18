@@ -448,6 +448,11 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_table_extract', {})).rejects.toThrow('No browser session');
   });
 
+  it('browser_link_extract throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_link_extract', {})).rejects.toThrow('No browser session');
+  });
+
   it('browser_element_info throws without session', async () => {
     const mcp = create();
     await expect((mcp as any).handleTool('browser_element_info', { selector: '.btn' })).rejects.toThrow('No browser session');
