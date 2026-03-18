@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Batch Click
+      case 'browser_click_all':
+        return this.handleClickAll(args);
+
       // Popup Blocker
       case 'browser_popup_blocker':
         return this.handlePopupBlocker(args);
@@ -987,6 +991,39 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Batch Click ──────────────────────────────────────────
+
+  private async handleClickAll(args: Record<string, unknown>): Promise<ToolResult> {
+    const selector = this.requireString(args, 'selector');
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const limit = (args.limit as number) ?? 20;
+
+    const result = await bridge.evaluate(`(() => {
+      const els = [...document.querySelectorAll(${JSON.stringify(selector)})].slice(0, ${limit});
+      const clicked = [];
+      for (const el of els) {
+        try {
+          el.click();
+          clicked.push({
+            tag: el.tagName.toLowerCase(),
+            text: (el.textContent || '').trim().slice(0, 40),
+            id: el.id || null,
+          });
+        } catch {}
+      }
+      return JSON.stringify({ total: document.querySelectorAll(${JSON.stringify(selector)}).length, clicked: clicked.length, elements: clicked });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = [`[Click All] ${data.clicked}/${data.total} elements clicked (selector: ${selector})`];
+    for (const el of data.elements.slice(0, 10)) {
+      lines.push(`  <${el.tag}${el.id ? '#' + el.id : ''}> "${el.text}"`);
+    }
+    if (data.clicked > 10) lines.push(`  ... +${data.clicked - 10} more`);
     return textResult(lines.join('\n'));
   }
 

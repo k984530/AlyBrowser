@@ -563,6 +563,25 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Batch Click ──────────────────────────────────────────
+  {
+    name: 'browser_click_all',
+    description:
+      'Click all elements matching a CSS selector. Returns count of clicked elements. ' +
+      'Useful for: "select all" checkboxes, dismissing multiple notifications, closing overlays, ' +
+      'expanding all accordion sections.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector to match elements (e.g., "input[type=checkbox]:not(:checked)")' },
+        limit: { type: 'number', description: 'Max elements to click (default: 20, safety limit)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['selector'],
+    },
+  },
+
   // ── Popup Blocker ─────────────────────────────────────────
   {
     name: 'browser_popup_blocker',
