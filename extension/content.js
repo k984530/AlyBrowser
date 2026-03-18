@@ -164,6 +164,9 @@ function getLabel(el) {
     const type = (el.type || 'text').toLowerCase();
     if (type === 'checkbox' || type === 'radio') {
       parts.push(el.checked ? 'checked' : 'unchecked');
+    } else if (type === 'password') {
+      // Never expose password values in snapshots
+      parts.push(el.value ? '••••••••' : '');
     } else if (el.value) {
       parts.push(el.value.substring(0, MAX_VALUE_LENGTH));
     }

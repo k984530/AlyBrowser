@@ -324,4 +324,42 @@ describe('content.js snapshot', () => {
       })).toThrow('not a file input');
     });
   });
+
+  // ── Password Field Masking ───────────────────────────────────
+
+  describe('password field masking', () => {
+    it('masks password input values with bullets', () => {
+      const input = document.createElement('input');
+      input.type = 'password';
+      input.value = 'my-secret-password';
+      document.body.innerHTML = '';
+      document.body.appendChild(input);
+
+      const snap = funcs.buildSnapshot();
+      expect(snap).not.toContain('my-secret-password');
+      expect(snap).toContain('••••••••');
+    });
+
+    it('shows empty string for empty password field', () => {
+      const input = document.createElement('input');
+      input.type = 'password';
+      input.value = '';
+      document.body.innerHTML = '';
+      document.body.appendChild(input);
+
+      const snap = funcs.buildSnapshot();
+      expect(snap).not.toContain('••••••••');
+    });
+
+    it('still shows regular text input values', () => {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = 'visible-text';
+      document.body.innerHTML = '';
+      document.body.appendChild(input);
+
+      const snap = funcs.buildSnapshot();
+      expect(snap).toContain('visible-text');
+    });
+  });
 });
