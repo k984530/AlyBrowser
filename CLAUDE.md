@@ -38,7 +38,7 @@ npm run coverage   # vitest --coverage
 
 ## Tools
 
-125 MCP tools across 29 categories: browser control (5), site knowledge (2), page reading (4), interaction (8), advanced interaction (9), navigation & scrolling (7), tabs (4), frames (1), page info (6), data extraction (7), DOM manipulation (5), form automation (2), cookies (5), storage (3), performance & audit (7), SEO & social (4), accessibility (1), debugging (6), testing & emulation (7), design analysis (4), print & export (2), dialog & security (3), browser APIs (5), PWA & service worker (2), downloads & history (2), bookmarks (3), clipboard (2), sessions (4), screen (5).
+126 MCP tools across 29 categories: browser control (5), site knowledge (2), page reading (4), interaction (8), advanced interaction (9), navigation & scrolling (7), tabs (4), frames (1), page info (6), data extraction (7), DOM manipulation (5), form automation (2), cookies (5), storage (3), performance & audit (7), SEO & social (4), accessibility (1), debugging (7), testing & emulation (7), design analysis (4), print & export (2), dialog & security (3), browser APIs (5), PWA & service worker (2), downloads & history (2), bookmarks (3), clipboard (2), sessions (4), screen (5).
 
 ## Recent Changes
 
