@@ -563,6 +563,29 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Viewport ──────────────────────────────────────────────
+  {
+    name: 'browser_viewport_test',
+    description:
+      'Test page responsiveness across common device viewports. Reports viewport dimensions, ' +
+      'horizontal overflow, hidden elements, and media query breakpoints. ' +
+      'Presets: mobile (375x667), tablet (768x1024), desktop (1280x720), wide (1920x1080).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        preset: {
+          type: 'string',
+          enum: ['mobile', 'tablet', 'desktop', 'wide'],
+          description: 'Device preset (default: reports current viewport)',
+        },
+        width: { type: 'number', description: 'Custom viewport width (overrides preset)' },
+        height: { type: 'number', description: 'Custom viewport height (overrides preset)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Page Text ──────────────────────────────────────────────
   {
     name: 'browser_text_content',

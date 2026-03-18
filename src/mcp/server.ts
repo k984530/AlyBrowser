@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Viewport
+      case 'browser_viewport_test':
+        return this.handleViewportTest(args);
+
       // Page Text
       case 'browser_text_content':
         return this.handleTextContent(args);
@@ -916,6 +920,92 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Viewport ──────────────────────────────────────────────
+
+  private async handleViewportTest(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const presets: Record<string, [number, number]> = {
+      mobile: [375, 667],
+      tablet: [768, 1024],
+      desktop: [1280, 720],
+      wide: [1920, 1080],
+    };
+
+    const preset = args.preset as string | undefined;
+    const width = (args.width as number) ?? (preset ? presets[preset]?.[0] : undefined);
+    const height = (args.height as number) ?? (preset ? presets[preset]?.[1] : undefined);
+
+    // If width/height specified, resize viewport via evaluate
+    if (width && height) {
+      await bridge.evaluate(
+        `window.resizeTo(${width}, ${height}); void 0;`,
+        tabId,
+      );
+      // Small delay for reflow
+      await new Promise((r) => setTimeout(r, 300));
+    }
+
+    const result = await bridge.evaluate(`(() => {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const docW = document.documentElement.scrollWidth;
+      const docH = document.documentElement.scrollHeight;
+      const overflow = docW > vw;
+
+      // Find elements that overflow horizontally
+      const overflowing = [];
+      if (overflow) {
+        document.querySelectorAll('*').forEach(el => {
+          const rect = el.getBoundingClientRect();
+          if (rect.right > vw + 5 && el.tagName !== 'HTML' && el.tagName !== 'BODY') {
+            overflowing.push({
+              tag: el.tagName.toLowerCase(),
+              id: el.id || null,
+              class: (el.className || '').toString().slice(0, 50),
+              width: Math.round(rect.width),
+              overflow: Math.round(rect.right - vw),
+            });
+          }
+        });
+      }
+
+      // Check active media queries
+      const breakpoints = [320, 375, 480, 640, 768, 1024, 1280, 1536, 1920];
+      const activeBreakpoints = breakpoints.filter(bp =>
+        window.matchMedia('(min-width: ' + bp + 'px)').matches
+      );
+
+      return JSON.stringify({
+        viewport: { width: vw, height: vh },
+        document: { width: docW, height: docH },
+        overflow,
+        overflowingElements: overflowing.slice(0, 10),
+        activeBreakpoints,
+        devicePixelRatio: window.devicePixelRatio,
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const label = preset || `${data.viewport.width}x${data.viewport.height}`;
+    const lines = [
+      `[Viewport Test] ${label} (${data.viewport.width}x${data.viewport.height}, ${data.devicePixelRatio}x DPR)`,
+      `  Document: ${data.document.width}x${data.document.height}`,
+      `  Horizontal Overflow: ${data.overflow ? `YES (+${data.document.width - data.viewport.width}px)` : 'No'}`,
+      `  Active Breakpoints: ${data.activeBreakpoints.join(', ')}px`,
+    ];
+
+    if (data.overflowingElements.length > 0) {
+      lines.push('', '── Overflowing Elements ──');
+      for (const el of data.overflowingElements) {
+        lines.push(`  <${el.tag}${el.id ? '#' + el.id : ''}${el.class ? '.' + el.class.split(' ')[0] : ''}> width:${el.width}px, overflow:${el.overflow}px`);
+      }
+    }
 
     return textResult(lines.join('\n'));
   }
