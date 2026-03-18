@@ -594,6 +594,10 @@ export class AlyBrowserMCPServer {
       case 'browser_websocket_monitor':
         return this.handleWebSocketMonitor(args);
 
+      // Fetch Intercept
+      case 'browser_fetch_intercept':
+        return this.handleFetchIntercept(args);
+
       default:
         return errorResult(`Unknown tool: ${name}`);
     }
@@ -4556,6 +4560,110 @@ export class AlyBrowserMCPServer {
     for (const msg of (data.messages as Array<{ dir: string; connId: number; data: string; ts: number }>).slice(-30)) {
       const arrow = msg.dir === 'send' ? '→' : '←';
       lines.push(`  ${arrow} [#${msg.connId}] ${msg.data}`);
+    }
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Fetch Intercept ───────────────────────────────────────
+
+  private async handleFetchIntercept(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const action = (args.action as string) || 'read';
+    const filter = (args.filter as string) || '';
+
+    if (action === 'start') {
+      await bridge.evaluate(`(() => {
+        if (window.__alyFetchMonitor) return 'already_installed';
+        window.__alyFetchMonitor = { requests: [] };
+        const maxEntries = 100;
+        const mask = (s) => {
+          if (typeof s !== 'string') return s;
+          return s
+            .replace(/eyJ[A-Za-z0-9_-]{20,}\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*/g, '[JWT]')
+            .replace(/(?:password|passwd|token|secret|api_key|apikey|authorization)['"\\s]*[:=]['"\\s]*[^'"\\s,}{\\]]{3,}/gi, '[REDACTED]')
+            .replace(/[a-f0-9]{32,}/gi, (m) => m.length >= 40 ? '[HEX_SECRET]' : m);
+        };
+        const origFetch = window.fetch.bind(window);
+        window.__alyOrigFetch = origFetch;
+        window.fetch = async (input, init) => {
+          const url = typeof input === 'string' ? input : input.url;
+          const method = (init?.method || 'GET').toUpperCase();
+          const entry = { method, url, status: 0, reqBody: '', resBody: '', ts: Date.now(), duration: 0 };
+          if (init?.body) {
+            const bodyStr = typeof init.body === 'string' ? init.body : '<binary>';
+            entry.reqBody = mask(bodyStr.slice(0, 300));
+          }
+          const start = performance.now();
+          try {
+            const res = await origFetch(input, init);
+            entry.status = res.status;
+            entry.duration = Math.round(performance.now() - start);
+            try {
+              const clone = res.clone();
+              const text = await clone.text();
+              entry.resBody = mask(text.slice(0, 300));
+            } catch {}
+            if (window.__alyFetchMonitor.requests.length >= maxEntries) window.__alyFetchMonitor.requests.shift();
+            window.__alyFetchMonitor.requests.push(entry);
+            return res;
+          } catch (err) {
+            entry.status = -1;
+            entry.duration = Math.round(performance.now() - start);
+            entry.resBody = err.message;
+            if (window.__alyFetchMonitor.requests.length >= maxEntries) window.__alyFetchMonitor.requests.shift();
+            window.__alyFetchMonitor.requests.push(entry);
+            throw err;
+          }
+        };
+        return 'installed';
+      })()`, tabId);
+
+      return textResult('[Fetch Intercept] Interceptor installed. API calls via fetch() will be captured. Use action="read" to view.');
+    }
+
+    if (action === 'stop') {
+      await bridge.evaluate(`(() => {
+        if (window.__alyOrigFetch) {
+          window.fetch = window.__alyOrigFetch;
+          delete window.__alyOrigFetch;
+        }
+        delete window.__alyFetchMonitor;
+        return 'removed';
+      })()`, tabId);
+
+      return textResult('[Fetch Intercept] Interceptor removed.');
+    }
+
+    // action === 'read'
+    const filterJson = JSON.stringify(filter);
+    const result = await bridge.evaluate(`(() => {
+      if (!window.__alyFetchMonitor) return JSON.stringify({ installed: false });
+      const filter = ${filterJson};
+      let reqs = window.__alyFetchMonitor.requests;
+      if (filter) reqs = reqs.filter(r => r.url.includes(filter));
+      const data = { installed: true, requests: [...reqs], total: reqs.length };
+      window.__alyFetchMonitor.requests = [];
+      return JSON.stringify(data);
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (!data.installed) {
+      return textResult('[Fetch Intercept] Not installed. Call with action="start" first.');
+    }
+
+    if (data.requests.length === 0) {
+      return textResult(`[Fetch Intercept] No${filter ? ` matching (filter: "${filter}")` : ''} requests captured.`);
+    }
+
+    const lines = [`[Fetch Intercept] ${data.total} request(s)${filter ? ` (filter: "${filter}")` : ''}`];
+    for (const req of (data.requests as Array<{ method: string; url: string; status: number; reqBody: string; resBody: string; duration: number }>).slice(-20)) {
+      const statusIcon = req.status >= 200 && req.status < 300 ? 'OK' : req.status === -1 ? 'ERR' : `${req.status}`;
+      lines.push(`  ${req.method} ${req.url} → ${statusIcon} (${req.duration}ms)`);
+      if (req.reqBody) lines.push(`    req: ${req.reqBody}`);
+      if (req.resBody) lines.push(`    res: ${req.resBody}`);
     }
 
     return textResult(lines.join('\n'));

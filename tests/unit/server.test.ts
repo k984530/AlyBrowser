@@ -1380,5 +1380,54 @@ describe('AlyBrowserMCPServer', () => {
       expect(result.isError).toBeFalsy();
       expect(result.content[0].text).toContain('removed');
     });
+
+    it('fetch_intercept start installs interceptor', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue('installed');
+
+      const result = await (mcp as any).handleTool('browser_fetch_intercept', { action: 'start' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Interceptor installed');
+    });
+
+    it('fetch_intercept read returns API requests', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        installed: true,
+        requests: [
+          { method: 'GET', url: 'https://api.example.com/users', status: 200, reqBody: '', resBody: '[{"id":1}]', duration: 45 },
+          { method: 'POST', url: 'https://api.example.com/login', status: 401, reqBody: '{"email":"test"}', resBody: '{"error":"invalid"}', duration: 120 },
+        ],
+        total: 2,
+      }));
+
+      const result = await (mcp as any).handleTool('browser_fetch_intercept', { action: 'read' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('GET https://api.example.com/users');
+      expect(result.content[0].text).toContain('POST https://api.example.com/login');
+      expect(result.content[0].text).toContain('45ms');
+    });
+
+    it('fetch_intercept read when not installed', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({ installed: false }));
+
+      const result = await (mcp as any).handleTool('browser_fetch_intercept', { action: 'read' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Not installed');
+    });
+
+    it('fetch_intercept stop removes interceptor', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue('removed');
+
+      const result = await (mcp as any).handleTool('browser_fetch_intercept', { action: 'stop' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('removed');
+    });
   });
 });

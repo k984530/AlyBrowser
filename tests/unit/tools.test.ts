@@ -9,8 +9,8 @@ describe('tools definitions', () => {
     expect(tools.length).toBeGreaterThan(0);
   });
 
-  it('has exactly 125 tools', () => {
-    expect(tools.length).toBe(125);
+  it('has exactly 126 tools', () => {
+    expect(tools.length).toBe(126);
   });
 
   it('every tool has required fields', () => {
@@ -133,6 +133,8 @@ describe('tools definitions', () => {
     'screen_capture', 'screen_click', 'screen_type', 'screen_key', 'screen_scroll',
     // WebSocket Monitor (1)
     'browser_websocket_monitor',
+    // Fetch Intercept (1)
+    'browser_fetch_intercept',
   ];
 
   it('includes all expected tools', () => {

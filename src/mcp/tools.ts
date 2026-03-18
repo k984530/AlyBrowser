@@ -1798,4 +1798,24 @@ export const tools: ToolDefinition[] = [
       },
     },
   },
+
+  // ── Fetch Intercept ────────────────────────────────────────
+  {
+    name: 'browser_fetch_intercept',
+    description:
+      'Intercept fetch() and XMLHttpRequest calls to capture API traffic. ' +
+      'Actions: "start" installs interceptor, "read" returns captured requests/responses ' +
+      'and drains buffer, "stop" removes interceptor. Shows method, URL, status, ' +
+      'request/response bodies (truncated). Useful for debugging SPAs, reverse-engineering APIs, ' +
+      'and monitoring AJAX calls. Sensitive data in headers/bodies is auto-masked.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['start', 'read', 'stop'], description: 'start, read (default), or stop' },
+        filter: { type: 'string', description: 'Filter requests by URL substring (optional)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
 ];
