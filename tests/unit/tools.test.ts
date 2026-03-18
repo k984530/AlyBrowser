@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tools, type ToolDefinition } from '../../src/mcp/tools';
 
+const ROOT = resolve(__dirname, '../..');
+
 describe('tools definitions', () => {
   it('exports a non-empty array', () => {
     expect(Array.isArray(tools)).toBe(true);
@@ -236,5 +238,22 @@ describe('tools-handler sync', () => {
       orphanHandlers,
       `Handlers in server.ts with no tool definition: ${orphanHandlers.join(', ')}`,
     ).toEqual([]);
+  });
+});
+
+// ── Documentation Sync Test ───────────────────────────────
+describe('docs-tools sync', () => {
+  it('README.md tool count matches tools.ts', () => {
+    const readme = readFileSync(resolve(ROOT, 'README.md'), 'utf-8');
+    const match = readme.match(/## MCP Tools \((\d+)\)/);
+    expect(match, 'README.md missing "## MCP Tools (N)" heading').toBeTruthy();
+    expect(Number(match![1])).toBe(tools.length);
+  });
+
+  it('CLAUDE.md tool count matches tools.ts', () => {
+    const claude = readFileSync(resolve(ROOT, 'CLAUDE.md'), 'utf-8');
+    const match = claude.match(/(\d+) MCP tools across/);
+    expect(match, 'CLAUDE.md missing "N MCP tools across" text').toBeTruthy();
+    expect(Number(match![1])).toBe(tools.length);
   });
 });
