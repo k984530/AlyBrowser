@@ -563,6 +563,18 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── IndexedDB ────────────────────────────────────────────
+  {
+    name: 'browser_indexeddb_list',
+    description:
+      'List IndexedDB databases and their object stores. Useful for inspecting offline storage, ' +
+      'app state, and cached data in PWAs and SPAs.',
+    inputSchema: {
+      type: 'object',
+      properties: { ...tabIdProp, ...sessionIdProp },
+    },
+  },
+
   // ── Service Worker ───────────────────────────────────────
   {
     name: 'browser_service_worker_info',

@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // IndexedDB
+      case 'browser_indexeddb_list':
+        return this.handleIndexedDbList(args);
+
       // Service Worker
       case 'browser_service_worker_info':
         return this.handleServiceWorkerInfo(args);
@@ -1125,6 +1129,49 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── IndexedDB ────────────────────────────────────────────
+
+  private async handleIndexedDbList(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(async () => {
+      if (!indexedDB.databases) return JSON.stringify({ supported: false, note: 'indexedDB.databases() not available' });
+      try {
+        const dbs = await indexedDB.databases();
+        const details = [];
+        for (const db of dbs.slice(0, 10)) {
+          try {
+            const req = indexedDB.open(db.name, db.version);
+            const detail = await new Promise((resolve, reject) => {
+              req.onsuccess = () => {
+                const d = req.result;
+                const stores = [...d.objectStoreNames];
+                d.close();
+                resolve({ name: db.name, version: db.version, stores });
+              };
+              req.onerror = () => resolve({ name: db.name, version: db.version, stores: [] });
+              setTimeout(() => resolve({ name: db.name, version: db.version, stores: [], timeout: true }), 2000);
+            });
+            details.push(detail);
+          } catch { details.push({ name: db.name, version: db.version, stores: [] }); }
+        }
+        return JSON.stringify({ supported: true, count: dbs.length, databases: details });
+      } catch (e) { return JSON.stringify({ supported: true, error: e.message }); }
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    if (!data.supported) return textResult(`[IndexedDB] ${data.note}`);
+    if (data.error) return textResult(`[IndexedDB] Error: ${data.error}`);
+    if (data.count === 0) return textResult('[IndexedDB] No databases found.');
+
+    const lines = [`[IndexedDB] ${data.count} database(s)`];
+    for (const db of data.databases) {
+      lines.push(`  ${db.name} v${db.version} — ${db.stores.length} store(s): ${db.stores.join(', ') || '(none)'}`);
+    }
     return textResult(lines.join('\n'));
   }
 
