@@ -60,6 +60,18 @@ describe('snapshotDiff', () => {
     expect(result.summary).toContain('No changes');
   });
 
+  it('handles null inputs', () => {
+    const result = snapshotDiff(null, null);
+    expect(result.added).toHaveLength(0);
+    expect(result.removed).toHaveLength(0);
+  });
+
+  it('handles undefined inputs', () => {
+    const result = snapshotDiff(undefined, 'new content');
+    expect(result.added).toHaveLength(1);
+    expect(result.removed).toHaveLength(0);
+  });
+
   it('counts unchanged lines correctly', () => {
     const old = 'line1\nline2\nline3\nline4\nline5';
     const newSnap = 'line1\nline2\nline3\nline6\nline7';

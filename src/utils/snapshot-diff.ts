@@ -20,9 +20,9 @@ export interface DiffResult {
  * Compare two snapshots line-by-line and return the diff.
  * Uses a simple LCS-based approach optimized for accessibility tree snapshots.
  */
-export function snapshotDiff(oldSnap: string, newSnap: string): DiffResult {
-  const oldLines = oldSnap ? oldSnap.split('\n') : [];
-  const newLines = newSnap ? newSnap.split('\n') : [];
+export function snapshotDiff(oldSnap: string | null | undefined, newSnap: string | null | undefined): DiffResult {
+  const oldLines = oldSnap ? String(oldSnap).split('\n') : [];
+  const newLines = newSnap ? String(newSnap).split('\n') : [];
 
   const oldSet = new Set(oldLines);
   const newSet = new Set(newLines);

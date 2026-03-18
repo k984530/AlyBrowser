@@ -114,9 +114,9 @@ export class SiteKnowledge {
         fs.writeFileSync(keyPath, secret, { mode: 0o600 });
         this.encryptionKey = deriveKey(secret);
       }
-    } catch {
-      // Encryption unavailable — fall back to plaintext
-      this.encryptionKey = null;
+    } catch (err) {
+      // Encryption key setup failed — throw to prevent plaintext storage
+      throw new Error(`Site knowledge encryption init failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -194,7 +194,10 @@ export class SiteKnowledge {
     const fp = this.filePath(domain);
     const tmp = fp + '.tmp';
     const json = JSON.stringify(data);
-    const content = this.encryptionKey ? encrypt(json, this.encryptionKey) : json;
+    if (!this.encryptionKey) {
+      throw new Error('Cannot save site knowledge: encryption key not initialized');
+    }
+    const content = encrypt(json, this.encryptionKey);
     fs.writeFileSync(tmp, content);
     fs.renameSync(tmp, fp);
   }
