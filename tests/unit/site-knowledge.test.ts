@@ -349,4 +349,78 @@ describe('SiteKnowledge', () => {
       expect(entries[0].note).toBe('encrypted-test');
     });
   });
+
+  // ── Edge cases ───────────────────────────────────────────────
+
+  describe('edge cases', () => {
+    it('truncates action field to 1000 chars', () => {
+      const longAction = 'a'.repeat(2000);
+      sk.add(`https://${testDomain}/trunc`, longAction, 'success', 'ok');
+      const entries = sk.query(`https://${testDomain}/trunc`);
+      expect(entries[0].action.length).toBeLessThanOrEqual(1000);
+    });
+
+    it('truncates note field to 1000 chars', () => {
+      const longNote = 'n'.repeat(2000);
+      sk.add(`https://${testDomain}/trunc2`, 'click', 'fail', longNote);
+      const entries = sk.query(`https://${testDomain}/trunc2`);
+      expect(entries[0].note.length).toBeLessThanOrEqual(1000);
+    });
+
+    it('handles URL without protocol', () => {
+      sk.add(`${testDomain}/nohttp`, 'click', 'success', 'works');
+      const entries = sk.query(`https://${testDomain}/nohttp`);
+      expect(entries).toHaveLength(1);
+    });
+
+    it('strips www from domain', () => {
+      sk.add(`https://www.${testDomain}/page`, 'click', 'success', 'ok');
+      const entries = sk.query(`https://${testDomain}/page`);
+      expect(entries).toHaveLength(1);
+    });
+
+    it('normalizes trailing slash in path', () => {
+      sk.add(`https://${testDomain}/path/`, 'click', 'success', 'ok');
+      const entries = sk.query(`https://${testDomain}/path`);
+      expect(entries).toHaveLength(1);
+    });
+
+    it('formatForContext returns null for empty domain', () => {
+      expect(sk.formatForContext('https://never-visited-domain.xyz')).toBeNull();
+    });
+
+    it('formatCompact returns null for empty domain', () => {
+      expect(sk.formatCompact('https://never-visited-domain.xyz')).toBeNull();
+    });
+
+    it('hasDomain returns false for unvisited domain', () => {
+      expect(sk.hasDomain('https://nonexistent-domain.xyz')).toBe(false);
+    });
+
+    it('hasDomain returns true after adding entry', () => {
+      sk.add(`https://${testDomain}/hd`, 'click', 'success', 'ok');
+      expect(sk.hasDomain(`https://${testDomain}`)).toBe(true);
+    });
+
+    it('formatForContext includes entry count', () => {
+      sk.add(`https://${testDomain}/ctx`, 'click', 'success', 'first');
+      sk.add(`https://${testDomain}/ctx`, 'type', 'fail', 'second');
+      const ctx = sk.formatForContext(`https://${testDomain}/ctx`);
+      expect(ctx).toContain('2 entries');
+    });
+
+    it('formatCompact uses checkmark and cross symbols', () => {
+      sk.add(`https://${testDomain}/sym`, 'click', 'success', 'ok');
+      sk.add(`https://${testDomain}/sym`, 'type', 'fail', 'err');
+      const compact = sk.formatCompact(`https://${testDomain}/sym`);
+      expect(compact).toContain('✓');
+      expect(compact).toContain('✗');
+    });
+
+    it('entry includes ISO date string', () => {
+      sk.add(`https://${testDomain}/ts`, 'click', 'success', 'ok');
+      const entries = sk.query(`https://${testDomain}/ts`);
+      expect(entries[0].ts).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+  });
 });
