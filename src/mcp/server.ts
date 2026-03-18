@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Network
+      case 'browser_network_log':
+        return this.handleNetworkLog(args);
+
       // Form Automation
       case 'browser_form_fill':
         return this.handleFormFill(args);
@@ -887,6 +891,49 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Network ────────────────────────────────────────────────
+
+  private async handleNetworkLog(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const filter = args.filter as string | undefined;
+
+    const filterJson = filter ? JSON.stringify(filter) : 'null';
+    const result = await bridge.evaluate(`(() => {
+      const filter = ${filterJson};
+      const entries = performance.getEntriesByType('resource');
+      const filtered = filter
+        ? entries.filter(e => e.name.includes(filter))
+        : entries;
+      return JSON.stringify(
+        filtered.slice(-50).map(e => ({
+          url: e.name.length > 120 ? e.name.slice(0, 120) + '...' : e.name,
+          type: e.initiatorType,
+          size: e.transferSize || 0,
+          duration: Math.round(e.duration),
+          start: Math.round(e.startTime),
+        }))
+      );
+    })()`, tabId);
+
+    const entries = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (!entries || entries.length === 0) {
+      return textResult(`[Network Log] No requests found${filter ? ` matching "${filter}"` : ''}.`);
+    }
+
+    const lines = [
+      `[Network Log] ${entries.length} requests${filter ? ` matching "${filter}"` : ''}`,
+      '',
+    ];
+    for (const e of entries) {
+      const size = e.size > 1024 ? `${(e.size / 1024).toFixed(1)}KB` : `${e.size}B`;
+      lines.push(`  [${e.type}] ${e.url} — ${size}, ${e.duration}ms`);
+    }
 
     return textResult(lines.join('\n'));
   }

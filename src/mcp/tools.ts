@@ -563,6 +563,22 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Network ────────────────────────────────────────────────
+  {
+    name: 'browser_network_log',
+    description:
+      'Capture recent network requests using Performance API. Returns URL, transfer size, duration, ' +
+      'and initiator type for each resource. Useful for API debugging, finding failed requests, and analyzing page load.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filter: { type: 'string', description: 'Filter URLs containing this string (optional)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Form Automation ────────────────────────────────────────
   {
     name: 'browser_form_fill',
