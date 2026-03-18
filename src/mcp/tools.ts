@@ -563,6 +563,21 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Mixed Content ────────────────────────────────────────
+  {
+    name: 'browser_mixed_content_check',
+    description:
+      'Detect mixed content (HTTP resources on HTTPS pages). Scans images, scripts, stylesheets, ' +
+      'iframes, and media for insecure URLs. Reports security risk level.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── JS Coverage ──────────────────────────────────────────
   {
     name: 'browser_js_coverage',

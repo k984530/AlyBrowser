@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Mixed Content
+      case 'browser_mixed_content_check':
+        return this.handleMixedContentCheck(args);
+
       // JS Coverage
       case 'browser_js_coverage':
         return this.handleJsCoverage(args);
@@ -1094,6 +1098,49 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Mixed Content ────────────────────────────────────────
+
+  private async handleMixedContentCheck(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const isHttps = location.protocol === 'https:';
+      if (!isHttps) return JSON.stringify({ secure: false, note: 'Page is HTTP — mixed content check not applicable' });
+
+      const issues = [];
+      const check = (els, attr, type) => {
+        els.forEach(el => {
+          const url = el[attr] || el.getAttribute(attr) || '';
+          if (url.startsWith('http://')) {
+            issues.push({ type, url: url.slice(0, 120), tag: el.tagName.toLowerCase() });
+          }
+        });
+      };
+
+      check(document.querySelectorAll('img[src]'), 'src', 'image');
+      check(document.querySelectorAll('script[src]'), 'src', 'script');
+      check(document.querySelectorAll('link[href]'), 'href', 'stylesheet');
+      check(document.querySelectorAll('iframe[src]'), 'src', 'iframe');
+      check(document.querySelectorAll('video[src],audio[src]'), 'src', 'media');
+      check(document.querySelectorAll('object[data]'), 'data', 'object');
+
+      return JSON.stringify({ secure: true, issues, count: issues.length });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (!data.secure) return textResult(`[Mixed Content] ${data.note}`);
+    if (data.count === 0) return textResult('[Mixed Content] No mixed content detected. Page is fully HTTPS.');
+
+    const lines = [`[Mixed Content] ${data.count} insecure resource(s) found!`];
+    for (const i of data.issues.slice(0, 15)) {
+      lines.push(`  [${i.type}] <${i.tag}> ${i.url}`);
+    }
+    if (data.count > 15) lines.push(`  ... +${data.count - 15} more`);
     return textResult(lines.join('\n'));
   }
 
