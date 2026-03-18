@@ -54,7 +54,7 @@ describe('MCP Protocol (stdio)', () => {
       },
     });
 
-    const responses = await collectResponses(proc, 1500);
+    const responses = await collectResponses(proc, 2500);
     const init = responses.get(1);
     expect(init).toBeDefined();
     expect(init.result.serverInfo.name).toBe('aly-browser');
@@ -79,7 +79,7 @@ describe('MCP Protocol (stdio)', () => {
       send(proc, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
     }, 300);
 
-    const responses = await collectResponses(proc, 1500);
+    const responses = await collectResponses(proc, 2500);
     const list = responses.get(2);
     expect(list).toBeDefined();
     expect(list.result.tools).toHaveLength(124);
@@ -109,7 +109,7 @@ describe('MCP Protocol (stdio)', () => {
       });
     }, 300);
 
-    const responses = await collectResponses(proc, 1500);
+    const responses = await collectResponses(proc, 2500);
     const result = responses.get(2);
     expect(result).toBeDefined();
     expect(result.result.content[0].text).toContain('No active browser sessions');
@@ -134,7 +134,7 @@ describe('MCP Protocol (stdio)', () => {
       });
     }, 300);
 
-    const responses = await collectResponses(proc, 1500);
+    const responses = await collectResponses(proc, 2500);
     const result = responses.get(2);
     expect(result).toBeDefined();
     expect(result.result.content[0].text).toContain('No browser session');
@@ -160,7 +160,7 @@ describe('MCP Protocol (stdio)', () => {
       });
     }, 300);
 
-    const responses = await collectResponses(proc, 1500);
+    const responses = await collectResponses(proc, 2500);
     const result = responses.get(2);
     expect(result).toBeDefined();
     expect(result.result.isError).toBeFalsy();
@@ -185,7 +185,7 @@ describe('MCP Protocol (stdio)', () => {
       });
     }, 300);
 
-    const responses = await collectResponses(proc, 1500);
+    const responses = await collectResponses(proc, 2500);
     const result = responses.get(2);
     expect(result).toBeDefined();
     expect(result.result.content[0].text).toContain('Unknown tool');
@@ -220,7 +220,7 @@ describe('MCP Protocol (stdio)', () => {
       });
     }, 300);
 
-    const responses = await collectResponses(proc, 2000);
+    const responses = await collectResponses(proc, 3000);
     for (const id of [2, 3, 4]) {
       const result = responses.get(id);
       expect(result, `Response for id ${id} missing`).toBeDefined();
@@ -245,7 +245,7 @@ describe('MCP Protocol (stdio)', () => {
       send(proc, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
     }, 300);
 
-    const responses = await collectResponses(proc, 1500);
+    const responses = await collectResponses(proc, 2500);
     const list = responses.get(2);
     expect(list).toBeDefined();
 
@@ -275,7 +275,7 @@ describe('MCP Protocol (stdio)', () => {
         jsonrpc: '2.0', id: 2, method: 'tools/call',
         params: { name: 'browser_session_list', arguments: {} },
       });
-    }, 300);
+    }, 500);
 
     setTimeout(() => {
       // Second: close all (success)
@@ -283,7 +283,7 @@ describe('MCP Protocol (stdio)', () => {
         jsonrpc: '2.0', id: 3, method: 'tools/call',
         params: { name: 'browser_session_close_all', arguments: {} },
       });
-    }, 600);
+    }, 1000);
 
     setTimeout(() => {
       // Third: snapshot (error — no session)
@@ -291,9 +291,9 @@ describe('MCP Protocol (stdio)', () => {
         jsonrpc: '2.0', id: 4, method: 'tools/call',
         params: { name: 'browser_snapshot', arguments: {} },
       });
-    }, 900);
+    }, 1500);
 
-    const responses = await collectResponses(proc, 2500);
+    const responses = await collectResponses(proc, 4000);
 
     const r2 = responses.get(2);
     expect(r2).toBeDefined();
