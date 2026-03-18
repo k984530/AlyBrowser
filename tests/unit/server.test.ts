@@ -443,6 +443,13 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_geolocation_mock requires coordinates', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_geolocation_mock', {});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('lat/lng or a preset');
+  });
+
   it('browser_event_listener_list throws without session', async () => {
     const mcp = create();
     await expect((mcp as any).handleTool('browser_event_listener_list', {})).rejects.toThrow('No browser session');

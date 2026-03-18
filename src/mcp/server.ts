@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Geolocation Mock
+      case 'browser_geolocation_mock':
+        return this.handleGeolocationMock(args);
+
       // Event Listeners
       case 'browser_event_listener_list':
         return this.handleEventListenerList(args);
@@ -1059,6 +1063,38 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Geolocation Mock ─────────────────────────────────────
+
+  private async handleGeolocationMock(args: Record<string, unknown>): Promise<ToolResult> {
+    const presets: Record<string, [number, number]> = {
+      tokyo: [35.6762, 139.6503],
+      nyc: [40.7128, -74.0060],
+      london: [51.5074, -0.1278],
+      seoul: [37.5665, 126.9780],
+      paris: [48.8566, 2.3522],
+    };
+
+    const preset = args.preset as string | undefined;
+    const lat = (args.lat as number) ?? (preset ? presets[preset]?.[0] : undefined);
+    const lng = (args.lng as number) ?? (preset ? presets[preset]?.[1] : undefined);
+
+    if (lat === undefined || lng === undefined) {
+      return errorResult('Provide lat/lng or a preset (tokyo, nyc, london, seoul, paris)');
+    }
+
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    await bridge.evaluate(`(() => {
+      const mockPos = { coords: { latitude: ${lat}, longitude: ${lng}, accuracy: 10, altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() };
+      navigator.geolocation.getCurrentPosition = (success) => success(mockPos);
+      navigator.geolocation.watchPosition = (success) => { success(mockPos); return 1; };
+    })()`, tabId);
+
+    const label = preset || `${lat},${lng}`;
+    return textResult(`[Geolocation] Mocked to ${label} (${lat}, ${lng})`);
   }
 
   // ── Event Listeners ──────────────────────────────────────

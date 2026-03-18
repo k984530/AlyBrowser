@@ -563,6 +563,25 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Geolocation Mock ─────────────────────────────────────
+  {
+    name: 'browser_geolocation_mock',
+    description:
+      'Mock the browser geolocation API to return a specific lat/lng. ' +
+      'Useful for testing location-based features without physical movement. ' +
+      'Presets: tokyo, nyc, london, seoul, paris, or custom coordinates.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        preset: { type: 'string', enum: ['tokyo', 'nyc', 'london', 'seoul', 'paris'], description: 'City preset (overridden by lat/lng)' },
+        lat: { type: 'number', description: 'Custom latitude' },
+        lng: { type: 'number', description: 'Custom longitude' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Event Listeners ──────────────────────────────────────
   {
     name: 'browser_event_listener_list',
