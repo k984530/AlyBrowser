@@ -301,6 +301,12 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Advanced Click
+      case 'browser_double_click':
+        return this.handleDoubleClick(args);
+      case 'browser_right_click':
+        return this.handleRightClick(args);
+
       // Attribute Set
       case 'browser_attribute_set':
         return this.handleAttributeSet(args);
@@ -1020,6 +1026,43 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Advanced Click ───────────────────────────────────────
+
+  private async handleDoubleClick(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const ref = this.requireString(args, 'ref');
+    const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
+    await bridge.send('click', { ref, tabId, frameId });
+    await bridge.send('click', { ref, tabId, frameId });
+    const snap = await bridge.snapshot(tabId, frameId);
+    return textResult(`Double-clicked ${ref}\n\n${snap}`);
+  }
+
+  private async handleRightClick(args: Record<string, unknown>): Promise<ToolResult> {
+    const selector = this.requireString(args, 'selector');
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return JSON.stringify({ error: 'Element not found' });
+      const rect = el.getBoundingClientRect();
+      const evt = new MouseEvent('contextmenu', {
+        bubbles: true, cancelable: true,
+        clientX: rect.x + rect.width / 2,
+        clientY: rect.y + rect.height / 2,
+        button: 2,
+      });
+      el.dispatchEvent(evt);
+      return JSON.stringify({ ok: true, tag: el.tagName.toLowerCase(), id: el.id || null });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    if (data.error) return errorResult(data.error);
+    return textResult(`[Right Click] <${data.tag}${data.id ? '#' + data.id : ''}> (${selector})`);
   }
 
   // ── Attribute Set ────────────────────────────────────────

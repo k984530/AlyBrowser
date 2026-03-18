@@ -563,6 +563,35 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Advanced Click ───────────────────────────────────────
+  {
+    name: 'browser_double_click',
+    description: 'Double-click an element by @eN ref. Returns updated snapshot.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Element ref ID (e.g., "@e3")' },
+        ...tabIdProp,
+        ...frameIdProp,
+        ...sessionIdProp,
+      },
+      required: ['ref'],
+    },
+  },
+  {
+    name: 'browser_right_click',
+    description: 'Right-click (context menu) an element by CSS selector. Dispatches contextmenu event.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector of target element' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['selector'],
+    },
+  },
+
   // ── Attribute Set ────────────────────────────────────────
   {
     name: 'browser_attribute_set',
