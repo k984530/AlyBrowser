@@ -9,3 +9,5 @@ coverage/
 .pipeline/
 .claude/
 .mcp.json
+SKILL.md
+SPEC.md
