@@ -563,6 +563,21 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── JSON Extract ─────────────────────────────────────────
+  {
+    name: 'browser_json_extract',
+    description:
+      'Extract structured data from the page: JSON-LD, microdata, meta tags as JSON. ' +
+      'Useful for scraping product info, article metadata, breadcrumbs, and rich snippets.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Utility Tools ────────────────────────────────────────
   {
     name: 'browser_scroll_to_bottom',

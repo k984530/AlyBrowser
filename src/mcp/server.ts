@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // JSON Extract
+      case 'browser_json_extract':
+        return this.handleJsonExtract(args);
+
       // Utility Tools
       case 'browser_scroll_to_bottom':
       case 'browser_scroll_to_top':
@@ -1038,6 +1042,63 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── JSON Extract ─────────────────────────────────────────
+
+  private async handleJsonExtract(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const data = { jsonLd: [], meta: {}, openGraph: {}, twitter: {} };
+
+      // JSON-LD
+      document.querySelectorAll('script[type="application/ld+json"]').forEach(s => {
+        try { data.jsonLd.push(JSON.parse(s.textContent)); } catch {}
+      });
+
+      // Meta tags
+      document.querySelectorAll('meta[name], meta[property]').forEach(m => {
+        const key = m.getAttribute('name') || m.getAttribute('property') || '';
+        const val = m.getAttribute('content') || '';
+        if (key.startsWith('og:')) data.openGraph[key.slice(3)] = val;
+        else if (key.startsWith('twitter:')) data.twitter[key.slice(8)] = val;
+        else if (key) data.meta[key] = val;
+      });
+
+      return JSON.stringify(data);
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = ['[Structured Data]'];
+
+    if (data.jsonLd.length) {
+      lines.push('', `── JSON-LD (${data.jsonLd.length}) ──`);
+      for (const ld of data.jsonLd.slice(0, 3)) {
+        lines.push(`  @type: ${ld['@type'] || 'unknown'}`);
+        const preview = JSON.stringify(ld).slice(0, 200);
+        lines.push(`  ${preview}${preview.length >= 200 ? '...' : ''}`);
+      }
+    }
+    const ogKeys = Object.keys(data.openGraph);
+    if (ogKeys.length) {
+      lines.push('', '── Open Graph ──');
+      for (const [k, v] of Object.entries(data.openGraph)) lines.push(`  ${k}: ${String(v).slice(0, 100)}`);
+    }
+    const twKeys = Object.keys(data.twitter);
+    if (twKeys.length) {
+      lines.push('', '── Twitter Card ──');
+      for (const [k, v] of Object.entries(data.twitter)) lines.push(`  ${k}: ${String(v).slice(0, 100)}`);
+    }
+    const metaKeys = Object.keys(data.meta);
+    if (metaKeys.length) {
+      lines.push('', `── Meta Tags (${metaKeys.length}) ──`);
+      for (const [k, v] of Object.entries(data.meta).slice(0, 15)) lines.push(`  ${k}: ${String(v).slice(0, 80)}`);
+    }
+
+    if (lines.length === 1) lines.push('  No structured data found.');
     return textResult(lines.join('\n'));
   }
 
