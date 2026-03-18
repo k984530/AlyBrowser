@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { SiteKnowledge } from '../../src/mcp/site-knowledge';
+import { SiteKnowledge, redactSensitive } from '../../src/mcp/site-knowledge';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -194,6 +194,122 @@ describe('SiteKnowledge', () => {
     it('hasPath returns false for non-matching path', () => {
       sk.add(`https://${testDomain}/settings`, 'click', 'success', 'ok');
       expect(sk.hasPath(`https://${testDomain}/account`)).toBe(false);
+    });
+  });
+
+  // ── Sensitive Data Filtering ──────────────────────────────────
+
+  describe('sensitive data filtering', () => {
+    it('redacts password patterns in note', () => {
+      sk.add(`https://${testDomain}/login`, 'type', 'success', 'password: mySecret123');
+      const entries = sk.query(`https://${testDomain}/login`);
+      expect(entries[0].note).not.toContain('mySecret123');
+      expect(entries[0].note).toContain('[REDACTED]');
+    });
+
+    it('redacts password patterns in action', () => {
+      sk.add(`https://${testDomain}/login`, 'typed pwd=abc123 in field', 'success', 'ok');
+      const entries = sk.query(`https://${testDomain}/login`);
+      expect(entries[0].action).not.toContain('abc123');
+      expect(entries[0].action).toContain('[REDACTED]');
+    });
+
+    it('redacts API key patterns', () => {
+      sk.add(`https://${testDomain}/api`, 'call', 'fail', 'api_key=sk_live_abc123def456');
+      const entries = sk.query(`https://${testDomain}/api`);
+      expect(entries[0].note).not.toContain('sk_live_abc123def456');
+    });
+
+    it('redacts Bearer tokens', () => {
+      sk.add(`https://${testDomain}/api`, 'fetch', 'success', 'used Bearer eyJhbGciOiJIUz.payload.sig');
+      const entries = sk.query(`https://${testDomain}/api`);
+      expect(entries[0].note).not.toContain('eyJhbGciOiJIUz');
+    });
+
+    it('redacts JWT-like strings', () => {
+      sk.add(`https://${testDomain}/auth`, 'login', 'success', 'token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U');
+      const entries = sk.query(`https://${testDomain}/auth`);
+      expect(entries[0].note).not.toContain('eyJzdWIiOiIxMjM0NTY3ODkwIn0');
+    });
+
+    it('redacts long hex strings (potential secrets)', () => {
+      sk.add(`https://${testDomain}/config`, 'read', 'success', 'key was a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4');
+      const entries = sk.query(`https://${testDomain}/config`);
+      expect(entries[0].note).not.toContain('a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4');
+    });
+
+    it('preserves non-sensitive text', () => {
+      sk.add(`https://${testDomain}/page`, 'click login button', 'success', 'redirected to dashboard');
+      const entries = sk.query(`https://${testDomain}/page`);
+      expect(entries[0].action).toBe('click login button');
+      expect(entries[0].note).toBe('redirected to dashboard');
+    });
+
+    it('redacts email:password combos', () => {
+      sk.add(`https://${testDomain}/login`, 'type', 'success', 'user@example.com:secretPass');
+      const entries = sk.query(`https://${testDomain}/login`);
+      expect(entries[0].note).not.toContain('secretPass');
+    });
+  });
+
+  // ── redactSensitive (unit) ─────────────────────────────────────
+
+  describe('redactSensitive', () => {
+    it('redacts password=value', () => {
+      expect(redactSensitive('password=hunter2')).toContain('[REDACTED]');
+      expect(redactSensitive('password=hunter2')).not.toContain('hunter2');
+    });
+
+    it('redacts secret: value', () => {
+      expect(redactSensitive('secret: abc123')).toContain('[REDACTED]');
+    });
+
+    it('redacts token=value', () => {
+      expect(redactSensitive('token=xyzzy')).toContain('[REDACTED]');
+    });
+
+    it('redacts Bearer tokens', () => {
+      expect(redactSensitive('Authorization: Bearer abc123def')).toContain('[REDACTED]');
+      expect(redactSensitive('Authorization: Bearer abc123def')).not.toContain('abc123def');
+    });
+
+    it('leaves safe text unchanged', () => {
+      expect(redactSensitive('clicked the submit button')).toBe('clicked the submit button');
+      expect(redactSensitive('page loaded in 2s')).toBe('page loaded in 2s');
+    });
+
+    it('handles empty string', () => {
+      expect(redactSensitive('')).toBe('');
+    });
+
+    it('redacts multiple patterns in one string', () => {
+      const result = redactSensitive('password=abc token=xyz');
+      expect(result).not.toContain('abc');
+      expect(result).not.toContain('xyz');
+    });
+  });
+
+  // ── Encrypted Storage ──────────────────────────────────────────
+
+  describe('encrypted storage', () => {
+    it('stores data in encrypted format on disk', () => {
+      sk.add(`https://${testDomain}/enc`, 'click', 'success', 'works');
+      const fp = path.join(baseDir, `${testDomain}.json`);
+      const raw = fs.readFileSync(fp, 'utf-8');
+      // Encrypted content should NOT be valid JSON
+      let isPlainJson = false;
+      try { JSON.parse(raw); isPlainJson = true; } catch {}
+      expect(isPlainJson).toBe(false);
+    });
+
+    it('loads encrypted data correctly on fresh instance', () => {
+      sk.add(`https://${testDomain}/enc`, 'click', 'success', 'encrypted-test');
+
+      // Create a new instance (simulates restart — reads from disk)
+      const sk2 = new SiteKnowledge();
+      const entries = sk2.query(`https://${testDomain}/enc`);
+      expect(entries).toHaveLength(1);
+      expect(entries[0].note).toBe('encrypted-test');
     });
   });
 });

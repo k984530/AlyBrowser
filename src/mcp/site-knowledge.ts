@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -19,13 +20,94 @@ const MAX_ENTRIES_PER_DOMAIN = 200;
 const MAX_CONTEXT_ENTRIES = 20;
 const MAX_COMPACT_ENTRIES = 5;
 
+// ── Sensitive data filtering ─────────────────────────────────
+
+/** Patterns that indicate sensitive values — matched case-insensitively */
+const SENSITIVE_PATTERNS = [
+  // Credentials
+  /\b(password|passwd|pwd)\s*[:=]\s*\S+/gi,
+  /\b(secret|token|api[_-]?key|access[_-]?key|auth[_-]?token)\s*[:=]\s*\S+/gi,
+  // Bearer tokens
+  /Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi,
+  // JWT-like strings (3 base64url parts)
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+  // AWS-style keys
+  /\b(AKIA|ASIA)[A-Z0-9]{16}\b/g,
+  // Generic long hex/base64 secrets (32+ chars of hex or 24+ chars of base64)
+  /\b[0-9a-f]{32,}\b/gi,
+  // Email:password combos
+  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\s*[:]\s*\S+/g,
+  // Credit card numbers (basic 13-19 digit)
+  /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{1,7}\b/g,
+];
+
+/** Replace sensitive patterns with [REDACTED] */
+export function redactSensitive(text: string): string {
+  let result = text;
+  for (const pattern of SENSITIVE_PATTERNS) {
+    // Reset lastIndex for global regexes
+    pattern.lastIndex = 0;
+    result = result.replace(pattern, '[REDACTED]');
+  }
+  return result;
+}
+
+// ── Encryption helpers (AES-256-GCM) ─────────────────────────
+
+const ALGO = 'aes-256-gcm';
+const IV_LEN = 12;
+const TAG_LEN = 16;
+const SECRET_FILE = '.encryption-key';
+
+function deriveKey(secret: string): Buffer {
+  return crypto.createHash('sha256').update(secret).digest();
+}
+
+function encrypt(plaintext: string, key: Buffer): string {
+  const iv = crypto.randomBytes(IV_LEN);
+  const cipher = crypto.createCipheriv(ALGO, key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf-8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  // Format: base64(iv + tag + ciphertext)
+  return Buffer.concat([iv, tag, encrypted]).toString('base64');
+}
+
+function decrypt(encoded: string, key: Buffer): string {
+  const buf = Buffer.from(encoded, 'base64');
+  const iv = buf.subarray(0, IV_LEN);
+  const tag = buf.subarray(IV_LEN, IV_LEN + TAG_LEN);
+  const ciphertext = buf.subarray(IV_LEN + TAG_LEN);
+  const decipher = crypto.createDecipheriv(ALGO, key, iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(ciphertext) + decipher.final('utf-8');
+}
+
 export class SiteKnowledge {
   private baseDir: string;
   private cache = new Map<string, SiteData>();
+  private encryptionKey: Buffer | null = null;
 
   constructor() {
     this.baseDir = path.join(os.homedir(), '.aly-browser', 'site-knowledge');
     fs.mkdirSync(this.baseDir, { recursive: true });
+    this.initEncryptionKey();
+  }
+
+  private initEncryptionKey(): void {
+    const keyPath = path.join(this.baseDir, SECRET_FILE);
+    try {
+      if (fs.existsSync(keyPath)) {
+        const secret = fs.readFileSync(keyPath, 'utf-8').trim();
+        this.encryptionKey = deriveKey(secret);
+      } else {
+        const secret = crypto.randomBytes(32).toString('hex');
+        fs.writeFileSync(keyPath, secret, { mode: 0o600 });
+        this.encryptionKey = deriveKey(secret);
+      }
+    } catch {
+      // Encryption unavailable — fall back to plaintext
+      this.encryptionKey = null;
+    }
   }
 
   private parseUrl(url: string): { domain: string; pathname: string } {
@@ -40,8 +122,11 @@ export class SiteKnowledge {
       };
     } catch {
       const idx = url.indexOf('/');
+      const rawDomain = (idx >= 0 ? url.slice(0, idx) : url).replace(/^www\./, '');
+      // Sanitize domain to prevent path traversal
+      const domain = rawDomain.replace(/\.\./g, '').replace(/[/\\]/g, '') || 'unknown';
       return {
-        domain: (idx >= 0 ? url.slice(0, idx) : url).replace(/^www\./, ''),
+        domain,
         pathname: idx >= 0 ? this.normalizePath(url.slice(idx)) : '/',
       };
     }
@@ -68,7 +153,14 @@ export class SiteKnowledge {
     let data: SiteData = { domain, entries: [] };
     try {
       if (fs.existsSync(fp)) {
-        data = JSON.parse(fs.readFileSync(fp, 'utf-8'));
+        const raw = fs.readFileSync(fp, 'utf-8');
+        // Try decrypting first, fall back to plaintext JSON
+        if (this.encryptionKey && !raw.startsWith('{')) {
+          const json = decrypt(raw, this.encryptionKey);
+          data = JSON.parse(json);
+        } else {
+          data = JSON.parse(raw);
+        }
       }
     } catch {
       // corrupted — back up and start fresh
@@ -83,10 +175,24 @@ export class SiteKnowledge {
       data.entries = data.entries.slice(-MAX_ENTRIES_PER_DOMAIN);
     }
     this.cache.set(domain, data);
-    fs.writeFileSync(this.filePath(domain), JSON.stringify(data));
+    // Atomic write: temp file + rename to prevent partial writes on concurrent access
+    const fp = this.filePath(domain);
+    const tmp = fp + '.tmp';
+    const json = JSON.stringify(data);
+    const content = this.encryptionKey ? encrypt(json, this.encryptionKey) : json;
+    fs.writeFileSync(tmp, content);
+    fs.renameSync(tmp, fp);
   }
 
   add(url: string, action: string, result: 'success' | 'fail', note: string): void {
+    // Enforce field length limits to prevent disk/memory abuse
+    action = action.slice(0, 1000);
+    note = note.slice(0, 1000);
+
+    // Redact sensitive information before storing
+    action = redactSensitive(action);
+    note = redactSensitive(note);
+
     const { domain, pathname } = this.parseUrl(url);
     const data = this.load(domain);
 
