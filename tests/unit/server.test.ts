@@ -320,4 +320,126 @@ describe('AlyBrowserMCPServer', () => {
     (mcp as any).recordRecovery('https://test.com', 'browser_type', 'ref=@e0');
     expect((mcp as any).recentFailures.has('test.com')).toBe(false);
   });
+
+  // ── More handler error paths ─────────────────────────────────
+
+  it('browser_select throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_select', { ref: '@e0', value: 'x' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_hover throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_hover', { ref: '@e0' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_scroll throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_scroll', { x: 0, y: 100 })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_wait throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_wait', { selector: '.btn' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_wait_for_stable throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_wait_for_stable', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_html throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_html', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_tab_new throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_tab_new', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_tab_close throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_tab_close', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_tab_switch throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_tab_switch', { tabId: 1 })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_cookie_set throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_cookie_set', { url: 'http://x', name: 'a', value: 'b' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_cookie_delete throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_cookie_delete', { url: 'http://x', name: 'a' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_alarm_create throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_alarm_create', { name: 'test' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_alarm_list throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_alarm_list', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_alarm_clear throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_alarm_clear', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_alarm_events throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_alarm_events', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_storage_get throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_storage_get', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_storage_set throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_storage_set', { data: {} })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_notify throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_notify', { title: 'x', message: 'y' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_bookmark_list throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_bookmark_list', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_bookmark_create throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_bookmark_create', { title: 'x', url: 'http://x' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_bookmark_delete throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_bookmark_delete', { id: '1' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_top_sites throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_top_sites', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_clipboard_read throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_clipboard_read', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_clipboard_write throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
+  });
 });
