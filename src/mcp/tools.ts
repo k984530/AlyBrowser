@@ -563,6 +563,81 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Utility Tools ────────────────────────────────────────
+  {
+    name: 'browser_scroll_to_bottom',
+    description: 'Scroll to the very bottom of the page. Useful for loading lazy content or infinite scroll.',
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
+  },
+  {
+    name: 'browser_scroll_to_top',
+    description: 'Scroll to the top of the page.',
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
+  },
+  {
+    name: 'browser_get_url',
+    description: 'Get the current page URL. Simpler than browser_eval for just getting the URL.',
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
+  },
+  {
+    name: 'browser_get_title',
+    description: 'Get the current page title.',
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
+  },
+  {
+    name: 'browser_focus',
+    description: 'Focus an element by CSS selector. Useful before typing into non-ref elements.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['selector'],
+    },
+  },
+  {
+    name: 'browser_blur',
+    description: 'Remove focus from the currently focused element. Triggers blur events.',
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
+  },
+  {
+    name: 'browser_press_key',
+    description: 'Dispatch a keyboard event (keydown + keyup) on the focused element or document. Supports Enter, Escape, Tab, ArrowDown, etc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'Key name (e.g., "Enter", "Escape", "Tab", "ArrowDown")' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['key'],
+    },
+  },
+  {
+    name: 'browser_reload',
+    description: 'Reload the current page. Optionally bypass cache.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        hard: { type: 'boolean', description: 'Force reload bypassing cache (default: false)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+  {
+    name: 'browser_page_info',
+    description: 'Get basic page information: URL, title, domain, protocol, viewport size, scroll position.',
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
+  },
+  {
+    name: 'browser_element_count',
+    description: 'Get total number of DOM elements on the page. Quick complexity check.',
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
+  },
+
   // ── Advanced Click ───────────────────────────────────────
   {
     name: 'browser_double_click',

@@ -301,6 +301,19 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Utility Tools
+      case 'browser_scroll_to_bottom':
+      case 'browser_scroll_to_top':
+      case 'browser_get_url':
+      case 'browser_get_title':
+      case 'browser_focus':
+      case 'browser_blur':
+      case 'browser_press_key':
+      case 'browser_reload':
+      case 'browser_page_info':
+      case 'browser_element_count':
+        return this.handleUtilityTool(name, args);
+
       // Advanced Click
       case 'browser_double_click':
         return this.handleDoubleClick(args);
@@ -1026,6 +1039,63 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Utility Tools ────────────────────────────────────────
+
+  private async handleUtilityTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
+    if (name === 'browser_focus') this.requireString(args, 'selector');
+    if (name === 'browser_press_key') this.requireString(args, 'key');
+
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    switch (name) {
+      case 'browser_scroll_to_bottom':
+        await bridge.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)', tabId);
+        return textResult('Scrolled to bottom.');
+      case 'browser_scroll_to_top':
+        await bridge.evaluate('window.scrollTo(0, 0)', tabId);
+        return textResult('Scrolled to top.');
+      case 'browser_get_url':
+        return textResult(String(await bridge.evaluate('location.href', tabId)));
+      case 'browser_get_title':
+        return textResult(String(await bridge.evaluate('document.title', tabId)));
+      case 'browser_focus':
+        await bridge.evaluate(`document.querySelector(${JSON.stringify(args.selector)})?.focus()`, tabId);
+        return textResult(`Focused: ${args.selector}`);
+      case 'browser_blur':
+        await bridge.evaluate('document.activeElement?.blur()', tabId);
+        return textResult('Blurred active element.');
+      case 'browser_press_key': {
+        const key = args.key as string;
+        await bridge.evaluate(`(() => {
+          const t = document.activeElement || document.body;
+          t.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true }));
+          t.dispatchEvent(new KeyboardEvent('keyup', { key: ${JSON.stringify(key)}, bubbles: true }));
+        })()`, tabId);
+        return textResult(`Pressed: ${key}`);
+      }
+      case 'browser_reload':
+        await bridge.evaluate(`location.reload(${args.hard ? 'true' : ''})`, tabId);
+        return textResult(args.hard ? 'Hard reload.' : 'Reload.');
+      case 'browser_page_info': {
+        const info = await bridge.evaluate(`JSON.stringify({
+          url: location.href, title: document.title,
+          domain: location.hostname, protocol: location.protocol,
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          scroll: { x: window.scrollX, y: window.scrollY },
+          docSize: { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight },
+        })`, tabId);
+        return textResult(typeof info === 'string' ? info : JSON.stringify(info, null, 2));
+      }
+      case 'browser_element_count': {
+        const count = await bridge.evaluate('document.querySelectorAll("*").length', tabId);
+        return textResult(`DOM elements: ${count}`);
+      }
+      default:
+        return errorResult(`Unknown utility tool: ${name}`);
+    }
   }
 
   // ── Advanced Click ───────────────────────────────────────
