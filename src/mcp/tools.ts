@@ -563,6 +563,22 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Page Audit (Unified) ──────────────────────────────────
+  {
+    name: 'browser_page_audit',
+    description:
+      'Run a comprehensive page audit combining performance, accessibility, SEO, and page weight analysis ' +
+      'into a single report with overall score. One call instead of 4 separate tools. ' +
+      'Returns score (0-100), issue count per category, and top issues.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Session Clone ─────────────────────────────────────────
   {
     name: 'browser_session_clone',

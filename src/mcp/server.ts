@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Page Audit
+      case 'browser_page_audit':
+        return this.handlePageAudit(args);
+
       // Session Clone
       case 'browser_session_clone':
         return this.handleSessionClone(args);
@@ -950,6 +954,84 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Page Audit (Unified) ──────────────────────────────────
+
+  private async handlePageAudit(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const issues = { perf: [], a11y: [], seo: [], weight: [] };
+
+      // Performance
+      const t = performance.timing;
+      const load = t.loadEventEnd - t.navigationStart;
+      const ttfb = t.responseStart - t.navigationStart;
+      if (load > 3000) issues.perf.push('Slow page load: ' + load + 'ms (>3s)');
+      if (ttfb > 600) issues.perf.push('Slow TTFB: ' + ttfb + 'ms (>600ms)');
+      const domElements = document.querySelectorAll('*').length;
+      if (domElements > 1500) issues.perf.push('Large DOM: ' + domElements + ' elements (>1500)');
+
+      // Accessibility
+      document.querySelectorAll('img').forEach(img => {
+        if (!img.hasAttribute('alt')) issues.a11y.push('Image missing alt: ' + (img.src || '').slice(0, 60));
+      });
+      document.querySelectorAll('a').forEach(a => {
+        if (!(a.textContent || '').trim() && !a.getAttribute('aria-label') && !a.querySelector('img[alt]'))
+          issues.a11y.push('Empty link: ' + (a.href || '').slice(0, 60));
+      });
+      if (!document.documentElement.hasAttribute('lang')) issues.a11y.push('Missing lang attribute');
+      if (!document.querySelector('h1')) issues.a11y.push('Missing h1 heading');
+
+      // SEO
+      if (!document.title) issues.seo.push('Missing page title');
+      else if (document.title.length > 60) issues.seo.push('Title too long: ' + document.title.length + ' chars');
+      const desc = document.querySelector('meta[name="description"]');
+      if (!desc) issues.seo.push('Missing meta description');
+      if (!document.querySelector('link[rel="canonical"]')) issues.seo.push('Missing canonical URL');
+      if (!document.querySelector('meta[property="og:title"]')) issues.seo.push('Missing Open Graph title');
+
+      // Weight
+      const resources = performance.getEntriesByType('resource');
+      const totalSize = resources.reduce((s,r) => s + (r.transferSize || 0), 0);
+      if (totalSize > 2 * 1024 * 1024) issues.weight.push('Heavy page: ' + Math.round(totalSize/1024) + 'KB (>2MB)');
+      const bigResources = resources.filter(r => (r.transferSize || 0) > 500 * 1024);
+      bigResources.forEach(r => issues.weight.push('Large resource: ' + Math.round((r.transferSize||0)/1024) + 'KB ' + r.name.slice(0, 60)));
+
+      const totalIssues = issues.perf.length + issues.a11y.length + issues.seo.length + issues.weight.length;
+      const score = Math.max(0, 100 - totalIssues * 5);
+
+      return JSON.stringify({
+        score, url: location.href, title: document.title,
+        counts: { perf: issues.perf.length, a11y: issues.a11y.length, seo: issues.seo.length, weight: issues.weight.length, total: totalIssues },
+        issues,
+        metrics: { load, ttfb, domElements, totalSize, resourceCount: resources.length },
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const grade = data.score >= 90 ? 'A' : data.score >= 70 ? 'B' : data.score >= 50 ? 'C' : data.score >= 30 ? 'D' : 'F';
+
+    const lines = [
+      `[Page Audit] Score: ${data.score}/100 (${grade}) — ${data.title}`,
+      `  URL: ${data.url}`,
+      `  Issues: ${data.counts.total} (Perf: ${data.counts.perf}, A11y: ${data.counts.a11y}, SEO: ${data.counts.seo}, Weight: ${data.counts.weight})`,
+      `  Load: ${data.metrics.load}ms, TTFB: ${data.metrics.ttfb}ms, DOM: ${data.metrics.domElements}, Resources: ${data.metrics.resourceCount}`,
+    ];
+
+    for (const [cat, list] of Object.entries(data.issues) as [string, string[]][]) {
+      if (list.length > 0) {
+        lines.push('', `── ${cat.toUpperCase()} ──`);
+        for (const i of list.slice(0, 5)) lines.push(`  ⚠ ${i}`);
+        if (list.length > 5) lines.push(`  ... +${list.length - 5} more`);
+      }
+    }
+
+    if (data.counts.total === 0) lines.push('', '✓ No issues found — great page quality!');
 
     return textResult(lines.join('\n'));
   }
