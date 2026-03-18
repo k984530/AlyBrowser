@@ -1651,5 +1651,113 @@ describe('AlyBrowserMCPServer', () => {
       expect(result.isError).toBeFalsy();
       expect((bridge as any).tabNew).toHaveBeenCalledWith('https://example.com');
     });
+
+    // ── Utility tools via handleUtilityTool ─────────────────
+    it('scroll_to_bottom returns confirmation', async () => {
+      const mcp = create();
+      injectMockBridge(mcp);
+      const result = await (mcp as any).handleTool('browser_scroll_to_bottom', {});
+      expect(result.content[0].text).toContain('Scrolled to bottom');
+    });
+
+    it('scroll_to_top returns confirmation', async () => {
+      const mcp = create();
+      injectMockBridge(mcp);
+      const result = await (mcp as any).handleTool('browser_scroll_to_top', {});
+      expect(result.content[0].text).toContain('Scrolled to top');
+    });
+
+    it('get_url returns page URL', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue('https://example.com/page');
+      const result = await (mcp as any).handleTool('browser_get_url', {});
+      expect(result.content[0].text).toContain('example.com');
+    });
+
+    it('get_title returns page title', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue('My Page Title');
+      const result = await (mcp as any).handleTool('browser_get_title', {});
+      expect(result.content[0].text).toContain('My Page Title');
+    });
+
+    it('blur returns confirmation', async () => {
+      const mcp = create();
+      injectMockBridge(mcp);
+      const result = await (mcp as any).handleTool('browser_blur', {});
+      expect(result.content[0].text).toContain('Blurred');
+    });
+
+    it('reload returns confirmation', async () => {
+      const mcp = create();
+      injectMockBridge(mcp);
+      const result = await (mcp as any).handleTool('browser_reload', {});
+      expect(result.content[0].text).toContain('Reload');
+    });
+
+    it('page_info returns JSON', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        url: 'https://example.com', title: 'Test',
+        domain: 'example.com', protocol: 'https:',
+        viewport: { width: 1280, height: 720 },
+        scroll: { x: 0, y: 100 },
+        docSize: { width: 1280, height: 3000 },
+      }));
+      const result = await (mcp as any).handleTool('browser_page_info', {});
+      expect(result.content[0].text).toContain('example.com');
+    });
+
+    it('element_count returns count', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(250);
+      const result = await (mcp as any).handleTool('browser_element_count', {});
+      expect(result.content[0].text).toContain('250');
+    });
+
+    // ── More eval-based handlers ────────────────────────────
+    it('web_vitals returns metrics', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        lcp: { value: 1200, rating: 'good' },
+        fcp: { value: 800, rating: 'good' },
+        cls: { value: 0.05, rating: 'good' },
+        ttfb: { value: 200, rating: 'good' },
+      }));
+      const result = await (mcp as any).handleTool('browser_web_vitals', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('LCP');
+    });
+
+    it('mixed_content_check returns security report', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        isHttps: true, mixed: 0, resources: [],
+      }));
+      const result = await (mcp as any).handleTool('browser_mixed_content_check', {});
+      expect(result.isError).toBeFalsy();
+    });
+
+    it('form_fill fills form fields', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        filled: 2, skipped: 0,
+        fields: [
+          { name: 'email', filled: true },
+          { name: 'password', filled: true },
+        ],
+      }));
+      const result = await (mcp as any).handleTool('browser_form_fill', {
+        data: { email: 'test@example.com', password: 'pass' },
+      });
+      expect(result.isError).toBeFalsy();
+    });
   });
 });
