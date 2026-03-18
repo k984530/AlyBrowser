@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Resource Hints
+      case 'browser_resource_hints':
+        return this.handleResourceHints(args);
+
       // Media List
       case 'browser_media_list':
         return this.handleMediaList(args);
@@ -1117,6 +1121,58 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Resource Hints ───────────────────────────────────────
+
+  private async handleResourceHints(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const hints = { preload: [], prefetch: [], preconnect: [], 'dns-prefetch': [], modulepreload: [] };
+      document.querySelectorAll('link[rel]').forEach(l => {
+        const rel = l.getAttribute('rel') || '';
+        if (hints[rel] !== undefined) {
+          hints[rel].push({ href: (l.href || '').slice(0, 100), as: l.getAttribute('as') || '', type: l.type || '' });
+        }
+      });
+
+      // Suggest missing hints for critical resources
+      const suggestions = [];
+      const resources = performance.getEntriesByType('resource');
+      const fonts = resources.filter(r => r.name.match(/\\.(woff2?|ttf|otf)/));
+      const earlyScripts = resources.filter(r => r.initiatorType === 'script' && r.startTime < 1000);
+      const thirdPartyDomains = new Set();
+      resources.forEach(r => { try { const h = new URL(r.name).hostname; if (h !== location.hostname) thirdPartyDomains.add(h); } catch {} });
+
+      if (fonts.length > 0 && hints.preload.filter(h => h.as === 'font').length === 0) {
+        suggestions.push('Consider preloading fonts: ' + fonts.slice(0, 2).map(f => f.name.split('/').pop()).join(', '));
+      }
+      thirdPartyDomains.forEach(d => {
+        if (!hints.preconnect.some(h => h.href.includes(d)) && !hints['dns-prefetch'].some(h => h.href.includes(d))) {
+          suggestions.push('Consider preconnect to: ' + d);
+        }
+      });
+
+      const total = Object.values(hints).reduce((s, a) => s + a.length, 0);
+      return JSON.stringify({ hints, total, suggestions: suggestions.slice(0, 5) });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = [`[Resource Hints] ${data.total} hints found`];
+
+    for (const [type, list] of Object.entries(data.hints) as [string, any[]][]) {
+      if (list.length > 0) {
+        lines.push(``, `── ${type} (${list.length}) ──`);
+        for (const h of list.slice(0, 5)) lines.push(`  ${h.href}${h.as ? ' as=' + h.as : ''}`);
+      }
+    }
+    if (data.suggestions.length > 0) {
+      lines.push('', '── Suggestions ──');
+      for (const s of data.suggestions) lines.push(`  💡 ${s}`);
+    }
     return textResult(lines.join('\n'));
   }
 

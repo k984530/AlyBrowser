@@ -563,6 +563,18 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Resource Hints ───────────────────────────────────────
+  {
+    name: 'browser_resource_hints',
+    description:
+      'Analyze resource hints: preload, prefetch, preconnect, dns-prefetch, modulepreload. ' +
+      'Reports existing hints and suggests missing ones for critical resources.',
+    inputSchema: {
+      type: 'object',
+      properties: { ...tabIdProp, ...sessionIdProp },
+    },
+  },
+
   // ── Media List ───────────────────────────────────────────
   {
     name: 'browser_media_list',
