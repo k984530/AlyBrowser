@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Event Listeners
+      case 'browser_event_listener_list':
+        return this.handleEventListenerList(args);
+
       // Print Preview
       case 'browser_print_preview':
         return this.handlePrintPreview(args);
@@ -1054,6 +1058,54 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Event Listeners ──────────────────────────────────────
+
+  private async handleEventListenerList(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const selector = (args.selector as string) || 'a,button,input,select,textarea,form,[onclick],[tabindex]';
+
+    const result = await bridge.evaluate(`(() => {
+      const sel = ${JSON.stringify(selector)};
+      const els = [...document.querySelectorAll(sel)].slice(0, 100);
+      const results = [];
+      const eventTypes = ['click','submit','input','change','focus','blur','keydown','keyup','mouseenter','mouseleave'];
+
+      for (const el of els) {
+        const listeners = [];
+        // Check inline handlers
+        for (const evt of eventTypes) {
+          if (el['on' + evt]) listeners.push({ type: evt, source: 'inline' });
+        }
+        // Check via getEventListeners (Chrome DevTools only, not available in content)
+        // Instead, check for common patterns
+        if (el.getAttribute('onclick')) listeners.push({ type: 'click', source: 'attribute' });
+        if (el.getAttribute('onsubmit')) listeners.push({ type: 'submit', source: 'attribute' });
+        if (el.getAttribute('onchange')) listeners.push({ type: 'change', source: 'attribute' });
+
+        if (listeners.length > 0 || el.tagName === 'BUTTON' || el.tagName === 'A' || el.type === 'submit') {
+          results.push({
+            tag: el.tagName.toLowerCase(),
+            id: el.id || null,
+            text: (el.textContent || '').trim().slice(0, 40),
+            type: el.type || null,
+            listeners: listeners.length > 0 ? listeners : [{ type: 'native', source: 'element' }],
+          });
+        }
+      }
+      return JSON.stringify({ count: results.length, elements: results });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = [`[Event Listeners] ${data.count} interactive elements`];
+    for (const el of data.elements.slice(0, 20)) {
+      const evts = el.listeners.map((l: any) => `${l.type}(${l.source})`).join(', ');
+      lines.push(`  <${el.tag}${el.id ? '#' + el.id : ''}> "${el.text}" — ${evts}`);
+    }
+    if (data.count > 20) lines.push(`  ... +${data.count - 20} more`);
     return textResult(lines.join('\n'));
   }
 

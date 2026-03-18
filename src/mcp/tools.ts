@@ -563,6 +563,22 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Event Listeners ──────────────────────────────────────
+  {
+    name: 'browser_event_listener_list',
+    description:
+      'List event listeners attached to elements on the page. Reports click, submit, input, change, ' +
+      'and other common event types with target elements. Useful for debugging interactivity issues.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector to inspect (default: scan common interactive elements)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Print to PDF ─────────────────────────────────────────
   {
     name: 'browser_print_preview',

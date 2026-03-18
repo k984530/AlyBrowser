@@ -443,6 +443,11 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_event_listener_list throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_event_listener_list', {})).rejects.toThrow('No browser session');
+  });
+
   it('browser_print_preview throws without session', async () => {
     const mcp = create();
     await expect((mcp as any).handleTool('browser_print_preview', {})).rejects.toThrow('No browser session');
