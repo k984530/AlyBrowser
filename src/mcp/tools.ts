@@ -114,6 +114,14 @@ export const tools: ToolDefinition[] = [
     inputSchema: { type: 'object', properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp } },
   },
   {
+    name: 'browser_snapshot_diff',
+    description:
+      'Compare current page snapshot with the previous one and return only what changed. ' +
+      'Dramatically reduces token usage (60-90% less) for incremental page updates. ' +
+      'Shows added/removed elements. Call after actions to see their effect without full snapshot overhead.',
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp } },
+  },
+  {
     name: 'browser_html',
     description: 'Get the current page HTML content. Use frameId to get HTML from a specific iframe.',
     inputSchema: { type: 'object', properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp } },

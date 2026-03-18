@@ -8,6 +8,7 @@ import { ExtensionBridge } from '../extension/bridge';
 import { tools } from './tools';
 import { SiteKnowledge } from './site-knowledge';
 import * as screen from './screen';
+import { snapshotDiff } from '../utils/snapshot-diff';
 
 const INSTRUCTIONS = `\
 AlyBrowser is a lightweight browser SDK for AI agents. \
@@ -90,6 +91,7 @@ export class AlyBrowserMCPServer {
   private recentFailures = new Map<string, Set<string>>();
   private knowledgeShownPaths = new Set<string>();
   private lastUrlPerTab = new Map<string, string>(); // "sessionId:tabId" → url
+  private lastSnapshot = new Map<string, string>(); // "sessionId:tabId:frameId" → snapshot
   readonly server: Server;
 
   constructor() {
@@ -206,6 +208,8 @@ export class AlyBrowserMCPServer {
       // Page reading
       case 'browser_snapshot':
         return this.handleSnapshot(args);
+      case 'browser_snapshot_diff':
+        return this.handleSnapshotDiff(args);
       case 'browser_html':
         return this.handleHTML(args);
       case 'browser_eval':
@@ -465,7 +469,32 @@ export class AlyBrowserMCPServer {
       }
     }
 
+    // Cache snapshot for diff
+    const snapKey = `${sessionId}:${tabId ?? 0}:${frameId ?? 0}`;
+    this.lastSnapshot.set(snapKey, snap);
+
     return textResult(snap);
+  }
+
+  private async handleSnapshotDiff(args: Record<string, unknown>): Promise<ToolResult> {
+    const sessionId = this.getSessionId(args);
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
+    const snapKey = `${sessionId}:${tabId ?? 0}:${frameId ?? 0}`;
+
+    const newSnap = await bridge.snapshot(tabId, frameId);
+    const oldSnap = this.lastSnapshot.get(snapKey);
+
+    // Update cache
+    this.lastSnapshot.set(snapKey, newSnap);
+
+    if (!oldSnap) {
+      return textResult(`[First snapshot — no previous to diff against]\n\n${newSnap}`);
+    }
+
+    const diff = snapshotDiff(oldSnap, newSnap);
+    return textResult(diff.summary);
   }
 
   private async handleHTML(args: Record<string, unknown>): Promise<ToolResult> {
