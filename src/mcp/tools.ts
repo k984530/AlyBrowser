@@ -563,6 +563,21 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Broken Links ─────────────────────────────────────────
+  {
+    name: 'browser_broken_links',
+    description:
+      'Check all links on the page for broken URLs. Tests href validity, identifies empty/javascript/# links, ' +
+      'and flags potentially broken external links. Quick link health check.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Mixed Content ────────────────────────────────────────
   {
     name: 'browser_mixed_content_check',

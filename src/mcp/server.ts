@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Broken Links
+      case 'browser_broken_links':
+        return this.handleBrokenLinks(args);
+
       // Mixed Content
       case 'browser_mixed_content_check':
         return this.handleMixedContentCheck(args);
@@ -1098,6 +1102,52 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Broken Links ─────────────────────────────────────────
+
+  private async handleBrokenLinks(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const links = [...document.querySelectorAll('a[href]')];
+      const issues = [];
+      let valid = 0;
+
+      for (const a of links) {
+        const href = a.getAttribute('href') || '';
+        const text = (a.textContent || '').trim().slice(0, 40);
+
+        if (!href || href === '#') {
+          issues.push({ type: 'empty', href, text });
+        } else if (href.startsWith('javascript:')) {
+          issues.push({ type: 'javascript', href: href.slice(0, 60), text });
+        } else if (href.startsWith('mailto:') || href.startsWith('tel:')) {
+          valid++;
+        } else {
+          try {
+            new URL(href, location.href);
+            valid++;
+          } catch {
+            issues.push({ type: 'invalid-url', href: href.slice(0, 80), text });
+          }
+        }
+      }
+
+      return JSON.stringify({ total: links.length, valid, issues: issues.slice(0, 20), issueCount: issues.length });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (data.issueCount === 0) return textResult(`[Broken Links] All ${data.total} links valid.`);
+
+    const lines = [`[Broken Links] ${data.issueCount} issue(s) of ${data.total} links`];
+    for (const i of data.issues) {
+      lines.push(`  [${i.type}] "${i.text}" → ${i.href || '(empty)'}`);
+    }
+    if (data.issueCount > 20) lines.push(`  ... +${data.issueCount - 20} more`);
     return textResult(lines.join('\n'));
   }
 
