@@ -1041,6 +1041,9 @@ describe('AlyBrowserMCPServer', () => {
       (bridge as any).frameList = vi.fn().mockResolvedValue([
         { frameId: 0, parentFrameId: -1, url: 'https://example.com' },
       ]);
+      (bridge as any).scrollBy = vi.fn().mockResolvedValue(undefined);
+      (bridge as any).waitForSelector = vi.fn().mockResolvedValue(undefined);
+      (bridge as any).waitForStable = vi.fn().mockResolvedValue(undefined);
 
       return bridge;
     }
@@ -1181,6 +1184,150 @@ describe('AlyBrowserMCPServer', () => {
       const result = await (mcp as any).handleTool('browser_sleep', {});
       expect(Date.now() - start).toBeGreaterThanOrEqual(900);
       expect(result.content[0].text).toContain('1 second');
+    });
+
+    // ── Eval-based tool handler tests ────────────────────────
+    it('perf_metrics returns formatted report', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        timing: { ttfb: 50, domInteractive: 200, domContentLoaded: 300, domComplete: 400, load: 500 },
+        dom: { elements: 150, depth: 8, scripts: 3, stylesheets: 2, images: 5, forms: 1, iframes: 0 },
+        resources: { total: 20, totalSize: 500000, byType: { js: 5, css: 2 } },
+        url: 'https://example.com', title: 'Test',
+      }));
+
+      const result = await (mcp as any).handleTool('browser_perf_metrics', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('TTFB');
+      expect(result.content[0].text).toContain('50ms');
+      expect(result.content[0].text).toContain('Elements: 150');
+    });
+
+    it('text_content returns structured text', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        title: 'Test Page',
+        blocks: [
+          { type: 'h1', text: 'Main Title' },
+          { type: 'p', text: 'Some paragraph text' },
+        ],
+        total: 2,
+      }));
+
+      const result = await (mcp as any).handleTool('browser_text_content', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Main Title');
+    });
+
+    it('form_detect returns field info', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        forms: 1,
+        fields: [
+          { tag: 'input', type: 'email', name: 'email', id: 'email', autocomplete: 'email', value: '', semantic: 'email' },
+          { tag: 'input', type: 'password', name: 'password', id: 'pass', autocomplete: 'current-password', value: '', semantic: 'password' },
+        ],
+      }));
+
+      const result = await (mcp as any).handleTool('browser_form_detect', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('email');
+    });
+
+    it('console_log returns messages', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      // console_log returns a flat array of log entries
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify([
+        { level: 'error', message: 'Something failed', ts: Date.now() },
+        { level: 'log', message: 'Hello world', ts: Date.now() },
+      ]));
+
+      const result = await (mcp as any).handleTool('browser_console_log', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Something failed');
+    });
+
+    it('navigate calls bridge.navigate', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_navigate', {
+        url: 'https://example.com/new',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(bridge.navigate).toHaveBeenCalledWith('https://example.com/new', undefined);
+    });
+
+    it('select calls bridge.selectOption', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_select', {
+        ref: '@e1', value: 'option1',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(bridge.selectOption).toHaveBeenCalledWith('@e1', 'option1', undefined, undefined);
+    });
+
+    it('hover calls bridge.hover', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_hover', { ref: '@e1' });
+      expect(result.isError).toBeFalsy();
+      expect(bridge.hover).toHaveBeenCalledWith('@e1', undefined, undefined);
+    });
+
+    it('scroll calls bridge.scrollBy', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_scroll', { x: 0, y: 300 });
+      expect(result.isError).toBeFalsy();
+      expect((bridge as any).scrollBy).toHaveBeenCalledWith(expect.objectContaining({ x: 0, y: 300 }));
+      expect(result.content[0].text).toContain('Scrolled');
+    });
+
+    it('wait calls bridge.waitForSelector', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_wait', { selector: '.loaded' });
+      expect(result.isError).toBeFalsy();
+      expect((bridge as any).waitForSelector).toHaveBeenCalledWith(
+        '.loaded', expect.objectContaining({ hidden: false }),
+      );
+      expect(result.content[0].text).toContain('.loaded');
+    });
+
+    it('wait_for_stable calls bridge.waitForStable', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_wait_for_stable', {});
+      expect(result.isError).toBeFalsy();
+      expect((bridge as any).waitForStable).toHaveBeenCalled();
+      expect(result.content[0].text).toContain('stabilized');
+    });
+
+    it('bookmark_list calls bridge.send', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_bookmark_list', {});
+      expect(result.isError).toBeFalsy();
+    });
+
+    it('storage_get calls bridge.send', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_storage_get', { key: 'mykey' });
+      expect(result.isError).toBeFalsy();
     });
   });
 });
