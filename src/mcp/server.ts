@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Dark Mode
+      case 'browser_dark_mode':
+        return this.handleDarkMode(args);
+
       // Viewport
       case 'browser_viewport_test':
         return this.handleViewportTest(args);
@@ -919,6 +923,76 @@ export class AlyBrowserMCPServer {
       '── Resources ──',
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
+    ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Dark Mode ─────────────────────────────────────────────
+
+  private async handleDarkMode(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const action = (args.action as string) || 'detect';
+
+    if (action === 'dark' || action === 'light') {
+      // Emulate color scheme by injecting a meta tag + overriding matchMedia
+      await bridge.evaluate(`(() => {
+        // Remove existing override
+        document.querySelector('meta[name="color-scheme"][data-aly]')?.remove();
+        const meta = document.createElement('meta');
+        meta.name = 'color-scheme';
+        meta.content = '${action}';
+        meta.setAttribute('data-aly', 'true');
+        document.head.appendChild(meta);
+        // Also set data attribute for CSS that reads it
+        document.documentElement.setAttribute('data-theme', '${action}');
+        document.documentElement.style.colorScheme = '${action}';
+      })()`, tabId);
+    }
+
+    const result = await bridge.evaluate(`(() => {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+      const cs = getComputedStyle(document.documentElement);
+      const bg = cs.backgroundColor;
+      const fg = cs.color;
+      // Detect if background is dark
+      const parseColor = (c) => {
+        const m = c.match(/\\d+/g);
+        return m ? m.map(Number) : [255,255,255];
+      };
+      const [r,g,b] = parseColor(bg);
+      const luminance = (0.299*r + 0.587*g + 0.114*b) / 255;
+      const isDarkBg = luminance < 0.5;
+
+      // Check for dark mode CSS rules
+      const hasDarkMediaQuery = [...document.styleSheets].some(ss => {
+        try {
+          return [...ss.cssRules].some(r => r.media?.mediaText?.includes('prefers-color-scheme'));
+        } catch { return false; }
+      });
+
+      return JSON.stringify({
+        systemPreference: prefersDark ? 'dark' : 'light',
+        pageBackground: isDarkBg ? 'dark' : 'light',
+        backgroundColor: bg,
+        textColor: fg,
+        respectsPreference: hasDarkMediaQuery,
+        colorSchemeAttr: document.documentElement.style.colorScheme || cs.colorScheme || 'auto',
+        dataTheme: document.documentElement.getAttribute('data-theme') || null,
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = [
+      `[Dark Mode] ${action === 'detect' ? 'Detection' : 'Emulation → ' + action}`,
+      `  System Preference: ${data.systemPreference}`,
+      `  Page Background: ${data.pageBackground} (${data.backgroundColor})`,
+      `  Text Color: ${data.textColor}`,
+      `  Respects prefers-color-scheme: ${data.respectsPreference ? 'Yes' : 'No'}`,
+      `  color-scheme: ${data.colorSchemeAttr}`,
+      `  data-theme: ${data.dataTheme || '(none)'}`,
     ];
 
     return textResult(lines.join('\n'));

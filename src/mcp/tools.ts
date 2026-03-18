@@ -563,6 +563,22 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Dark Mode ─────────────────────────────────────────────
+  {
+    name: 'browser_dark_mode',
+    description:
+      'Detect or toggle dark mode preference. Reports current color scheme (light/dark), ' +
+      'whether the page respects prefers-color-scheme, and can emulate dark/light mode.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['detect', 'dark', 'light'], description: 'detect (default), dark (emulate dark), light (emulate light)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Viewport ──────────────────────────────────────────────
   {
     name: 'browser_viewport_test',
