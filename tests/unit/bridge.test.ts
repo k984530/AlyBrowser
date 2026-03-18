@@ -163,7 +163,7 @@ describe('ExtensionBridge', () => {
       if (filePath.endsWith('manifest.json')) {
         return '{"version": "1.0.0", "name": "AlyBrowser"}';
       }
-      return 'const WS_PORT = 19222;';
+      return "const WS_PORT = 19222;\nconst WS_TOKEN = '';";
     });
     mockedFs.existsSync.mockReturnValue(true);
     mockedFs.readdirSync.mockReturnValue(['background.js', 'manifest.json', 'content.js'] as any);
@@ -1020,6 +1020,157 @@ describe('ExtensionBridge', () => {
     it('scrollBy passes frameId', async () => {
       const p = bridge.scrollBy({ x: 0, y: 100, tabId: 1, frameId: 4 });
       await verifySend(p, 'scrollBy', { x: 0, y: 100, tabId: 1, frameId: 4 });
+    });
+  });
+
+  // ── WS Token Authentication ─────────────────────────────────
+
+  describe('WS token authentication', () => {
+    /** Create a mock IncomingMessage with a URL query string */
+    function mockReq(url: string) {
+      return { url } as any;
+    }
+
+    it('generates and writes token file on startServer', async () => {
+      await launchAndConnect('auth-test');
+
+      const writeCalls = mockedFs.writeFileSync.mock.calls;
+      const tokenWrite = writeCalls.find(c => String(c[0]).endsWith('token'));
+      expect(tokenWrite).toBeDefined();
+      // Token should be a JWT (3 dot-separated parts)
+      const tokenValue = String(tokenWrite![1]);
+      expect(tokenValue.split('.')).toHaveLength(3);
+      // File permissions should be 0o600
+      expect(tokenWrite![2]).toEqual({ mode: 0o600 });
+    });
+
+    it('exposes token via getter after launch', async () => {
+      const { bridge } = await launchAndConnect('auth-test');
+      expect(bridge.token).toBeTruthy();
+      expect(bridge.token.split('.')).toHaveLength(3);
+    });
+
+    it('injects WS_TOKEN into background.js during prepareSessionExtension', async () => {
+      const bridge = new ExtensionBridge('auth-inject');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1); // WSS listening
+
+      // Quick connect timeout → triggers prepareSessionExtension
+      await vi.advanceTimersByTimeAsync(5001);
+
+      const writeCalls = mockedFs.writeFileSync.mock.calls;
+      const bgWrite = writeCalls.find(c => String(c[0]).endsWith('background.js'));
+      expect(bgWrite).toBeDefined();
+      const bgContent = String(bgWrite![1]);
+      expect(bgContent).toContain('const WS_TOKEN =');
+      // Token should be non-empty (injected)
+      expect(bgContent).not.toContain("const WS_TOKEN = '';");
+
+      // Complete launch
+      const wss = getLatestWss();
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+
+    it('accepts connection with valid token in URL query', async () => {
+      const bridge = new ExtensionBridge('auth-valid');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+
+      const wss = getLatestWss();
+      const ws = new MockWebSocket();
+      // Pass valid token in mock request URL
+      const token = bridge.token;
+      wss.emit('connection', ws, mockReq(`/?token=${token}`));
+      ws.emit('message', Buffer.from(JSON.stringify({ type: 'ready', tabId: 1 })));
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+
+      expect(bridge.isConnected).toBe(true);
+    });
+
+    it('rejects connection with invalid token', async () => {
+      const bridge = new ExtensionBridge('auth-invalid');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+
+      const wss = getLatestWss();
+      const ws = new MockWebSocket();
+      // Pass invalid token
+      wss.emit('connection', ws, mockReq('/?token=bad.token.here'));
+      // WS should be closed with 4001
+      expect(ws.close).toHaveBeenCalledWith(4001, 'Unauthorized');
+      expect(bridge.isConnected).toBe(false);
+
+      // Clean up — connect with no token (accepted with warning)
+      const ws2 = new MockWebSocket();
+      wss.emit('connection', ws2);
+      ws2.emit('message', Buffer.from(JSON.stringify({ type: 'ready', tabId: 1 })));
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+
+    it('accepts connection without token (backward compat, warning only)', async () => {
+      const bridge = new ExtensionBridge('auth-notoken');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+
+      const wss = getLatestWss();
+      const ws = new MockWebSocket();
+      // No request object (simulates pre-existing extension without auth)
+      wss.emit('connection', ws);
+      ws.emit('message', Buffer.from(JSON.stringify({ type: 'ready', tabId: 1 })));
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+
+      expect(bridge.isConnected).toBe(true);
+    });
+
+    it('accepts connection with empty URL (no token param)', async () => {
+      const bridge = new ExtensionBridge('auth-empty');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+
+      const wss = getLatestWss();
+      const ws = new MockWebSocket();
+      wss.emit('connection', ws, mockReq('/'));
+      ws.emit('message', Buffer.from(JSON.stringify({ type: 'ready', tabId: 1 })));
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+
+      expect(bridge.isConnected).toBe(true);
+    });
+
+    it('rejects invalid token in waitForExtension (Chrome for Testing path)', async () => {
+      const bridge = new ExtensionBridge('auth-cft');
+      const launchPromise = bridge.launch().catch((e: Error) => e);
+      await vi.advanceTimersByTimeAsync(1);
+
+      // Quick connect timeout → Chrome launch
+      await vi.advanceTimersByTimeAsync(5001);
+
+      const wss = getLatestWss();
+      const ws = new MockWebSocket();
+      wss.emit('connection', ws, mockReq('/?token=forged.jwt.token'));
+      // Should be rejected
+      expect(ws.close).toHaveBeenCalledWith(4001, 'Unauthorized');
+
+      // Connect properly to complete the test
+      const ws2 = new MockWebSocket();
+      wss.emit('connection', ws2);
+      ws2.emit('message', Buffer.from(JSON.stringify({ type: 'ready', tabId: 1 })));
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+
+    it('cleans up token file on close', async () => {
+      const { bridge } = await launchAndConnect('auth-cleanup');
+
+      await bridge.close();
+
+      const unlinkCalls = mockedFs.unlinkSync.mock.calls.map(c => String(c[0]));
+      expect(unlinkCalls.some(p => p.endsWith('token'))).toBe(true);
     });
   });
 });

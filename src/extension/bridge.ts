@@ -1,8 +1,11 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { spawn, execSync, type ChildProcess } from 'child_process';
+import type { IncomingMessage } from 'http';
 import { findChromeForTesting } from '../chrome/finder';
+import { generateSecret, signJwt, verifyJwt, type TokenPayload } from '../auth/token';
 import { Deferred } from '../utils/deferred';
 import { Logger } from '../utils/logger';
+import * as crypto from 'crypto';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -46,6 +49,8 @@ export class ExtensionBridge {
   private _sessionDir: string;
   private _profileDir: string;
   private _extensionCopyDir: string;
+  private _secret: string = '';
+  private _token: string = '';
 
   constructor(sessionId: string = 'default') {
     if (!SESSION_ID_RE.test(sessionId)) {
@@ -67,6 +72,11 @@ export class ExtensionBridge {
 
   get isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /** The session's auth token (JWT). External consumers can use this to connect. */
+  get token(): string {
+    return this._token;
   }
 
   async launch(options?: { url?: string }): Promise<void> {
@@ -104,7 +114,12 @@ export class ExtensionBridge {
 
       const timeout = setTimeout(() => settle(false), timeoutMs);
 
-      const onConnection = (ws: WebSocket) => {
+      const onConnection = (ws: WebSocket, req: IncomingMessage) => {
+        if (!this.validateWsToken(req)) {
+          ws.close(4001, 'Unauthorized');
+          return;
+        }
+
         this.ws = ws;
 
         ws.on('message', (data) => {
@@ -126,6 +141,25 @@ export class ExtensionBridge {
 
       this.wss!.on('connection', onConnection);
     });
+  }
+
+  /** Validate the auth token from a WS upgrade request. Returns true if valid or auth is not enforced. */
+  private validateWsToken(req?: IncomingMessage): boolean {
+    try {
+      const url = new URL(req?.url || '', `http://localhost:${this._port}`);
+      const token = url.searchParams.get('token');
+      if (!token) {
+        // No token provided — accept with warning (for pre-installed extensions)
+        log.warn('WS connection without auth token — consider using Chrome for Testing or configuring the extension');
+        return true;
+      }
+      verifyJwt(token, this._secret);
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.warn(`WS auth failed: ${msg}`);
+      return false;
+    }
   }
 
   /** Set up message and close handlers for the WS connection */
@@ -166,9 +200,22 @@ export class ExtensionBridge {
     this.wss = wss;
     this._port = port;
 
+    // Generate per-session JWT for WS authentication
+    this._secret = generateSecret();
+    this._token = signJwt(
+      {
+        sub: this._sessionId,
+        iat: Math.floor(Date.now() / 1000),
+        jti: crypto.randomBytes(16).toString('hex'),
+      },
+      this._secret,
+    );
+
     log.debug(`WS server on port ${this._port} (session: ${this._sessionId})`);
     fs.writeFileSync(path.join(this._sessionDir, 'port'), String(this._port));
     fs.writeFileSync(path.join(this._sessionDir, 'pid'), String(process.pid));
+    // Token file readable only by owner (prevents other users from reading it)
+    fs.writeFileSync(path.join(this._sessionDir, 'token'), this._token, { mode: 0o600 });
   }
 
   /** Copy the extension directory and inject the session's WS port into background.js */
@@ -184,13 +231,19 @@ export class ExtensionBridge {
       const dest = path.join(this._extensionCopyDir, file);
       if (fs.statSync(src).isFile()) {
         if (file === 'background.js') {
-          // Inject port into background.js
+          // Inject port and auth token into background.js
           let content = fs.readFileSync(src, 'utf-8');
-          const marker = /const WS_PORT = \d+;/;
-          if (!marker.test(content)) {
+          const portMarker = /const WS_PORT = \d+;/;
+          if (!portMarker.test(content)) {
             log.warn('background.js missing WS_PORT marker — extension may connect to wrong port');
           }
-          content = content.replace(marker, `const WS_PORT = ${this._port};`);
+          content = content.replace(portMarker, `const WS_PORT = ${this._port};`);
+
+          const tokenMarker = /const WS_TOKEN = '[^']*';/;
+          if (!tokenMarker.test(content)) {
+            log.warn('background.js missing WS_TOKEN marker — extension will connect without auth');
+          }
+          content = content.replace(tokenMarker, `const WS_TOKEN = '${this._token}';`);
           fs.writeFileSync(dest, content);
         } else if (file === 'manifest.json') {
           // Bump version on each launch to force Chrome to reload the service worker
@@ -289,9 +342,14 @@ export class ExtensionBridge {
       )));
     }, 30_000);
 
-    const onConnection = (ws: WebSocket) => {
+    const onConnection = (ws: WebSocket, req: IncomingMessage) => {
       if (settled) {
         ws.close();
+        return;
+      }
+
+      if (!this.validateWsToken(req)) {
+        ws.close(4001, 'Unauthorized');
         return;
       }
 
@@ -625,6 +683,7 @@ export class ExtensionBridge {
     // Clean up session metadata files (keep profile for persistence)
     try { fs.unlinkSync(path.join(this._sessionDir, 'port')); } catch {}
     try { fs.unlinkSync(path.join(this._sessionDir, 'pid')); } catch {}
+    try { fs.unlinkSync(path.join(this._sessionDir, 'token')); } catch {}
     // Clean up extension copy (port-specific, recreated on next launch)
     try { fs.rmSync(this._extensionCopyDir, { recursive: true, force: true }); } catch {}
   }

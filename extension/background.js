@@ -2,6 +2,7 @@
 // Bridges between Node.js WebSocket server and Chrome Extension APIs
 
 const WS_PORT = 19222;
+const WS_TOKEN = '';
 let ws = null;
 let activeTabId = null;
 let contentReady = new Map();
@@ -17,7 +18,10 @@ function connect() {
   connecting = true;
 
   try {
-    ws = new WebSocket(`ws://localhost:${WS_PORT}`);
+    const wsUrl = WS_TOKEN
+      ? `ws://localhost:${WS_PORT}?token=${WS_TOKEN}`
+      : `ws://localhost:${WS_PORT}`;
+    ws = new WebSocket(wsUrl);
   } catch {
     connecting = false;
     scheduleReconnect();
