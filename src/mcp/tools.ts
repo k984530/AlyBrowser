@@ -563,6 +563,23 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── DOM Observer ──────────────────────────────────────────
+  {
+    name: 'browser_dom_observe',
+    description:
+      'Start/stop/read a MutationObserver on the page. Captures DOM changes (added/removed nodes, ' +
+      'attribute changes, text changes). Use action="start" to begin observing, "read" to get changes ' +
+      'since last read (drains buffer), "stop" to remove observer.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['start', 'read', 'stop'], description: 'start, read (default), or stop' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Scroll Map ────────────────────────────────────────────
   {
     name: 'browser_scroll_map',

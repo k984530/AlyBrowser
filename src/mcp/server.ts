@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // DOM Observer
+      case 'browser_dom_observe':
+        return this.handleDomObserve(args);
+
       // Scroll Map
       case 'browser_scroll_map':
         return this.handleScrollMap(args);
@@ -928,6 +932,96 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── DOM Observer ──────────────────────────────────────────
+
+  private async handleDomObserve(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const action = (args.action as string) || 'read';
+
+    const result = await bridge.evaluate(`(() => {
+      const action = ${JSON.stringify(action)};
+
+      if (action === 'start') {
+        if (window.__alyDomObserver) {
+          return JSON.stringify({ status: 'already_running', changes: window.__alyDomChanges?.length || 0 });
+        }
+        window.__alyDomChanges = [];
+        const maxChanges = 500;
+        window.__alyDomObserver = new MutationObserver(mutations => {
+          for (const m of mutations) {
+            if (window.__alyDomChanges.length >= maxChanges) window.__alyDomChanges.shift();
+            const entry = { type: m.type, ts: Date.now() };
+            if (m.type === 'childList') {
+              entry.added = m.addedNodes.length;
+              entry.removed = m.removedNodes.length;
+              entry.target = (m.target.tagName || '').toLowerCase() + (m.target.id ? '#' + m.target.id : '');
+            } else if (m.type === 'attributes') {
+              entry.attr = m.attributeName;
+              entry.target = (m.target.tagName || '').toLowerCase() + (m.target.id ? '#' + m.target.id : '');
+            } else if (m.type === 'characterData') {
+              entry.target = (m.target.parentElement?.tagName || '').toLowerCase();
+            }
+            window.__alyDomChanges.push(entry);
+          }
+        });
+        window.__alyDomObserver.observe(document.body, {
+          childList: true, subtree: true, attributes: true, characterData: true,
+        });
+        return JSON.stringify({ status: 'started' });
+      }
+
+      if (action === 'stop') {
+        if (window.__alyDomObserver) {
+          window.__alyDomObserver.disconnect();
+          window.__alyDomObserver = null;
+        }
+        const changes = window.__alyDomChanges || [];
+        window.__alyDomChanges = null;
+        return JSON.stringify({ status: 'stopped', totalChanges: changes.length });
+      }
+
+      // read
+      const changes = window.__alyDomChanges || [];
+      window.__alyDomChanges = [];
+      return JSON.stringify({
+        status: window.__alyDomObserver ? 'observing' : 'not_started',
+        changes: changes.slice(-50),
+        total: changes.length,
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (data.status === 'started') {
+      return textResult('[DOM Observer] Started. Use action="read" to get changes, "stop" to end.');
+    }
+    if (data.status === 'already_running') {
+      return textResult(`[DOM Observer] Already running. ${data.changes} changes buffered.`);
+    }
+    if (data.status === 'stopped') {
+      return textResult(`[DOM Observer] Stopped. ${data.totalChanges} total changes recorded.`);
+    }
+    if (data.status === 'not_started') {
+      return textResult('[DOM Observer] Not started. Use action="start" first.');
+    }
+
+    // observing — show changes
+    const lines = [`[DOM Observer] ${data.total} changes (showing last ${data.changes.length})`];
+    for (const c of data.changes.slice(-20)) {
+      if (c.type === 'childList') {
+        lines.push(`  [nodes] +${c.added}/-${c.removed} in ${c.target}`);
+      } else if (c.type === 'attributes') {
+        lines.push(`  [attr] ${c.attr} on ${c.target}`);
+      } else {
+        lines.push(`  [text] in ${c.target}`);
+      }
+    }
+    if (data.total > 20) lines.push(`  ... ${data.total - 20} more`);
 
     return textResult(lines.join('\n'));
   }
