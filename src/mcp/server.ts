@@ -309,6 +309,8 @@ export class AlyBrowserMCPServer {
       case 'browser_table_extract':
         return this.handleTableExtract(args);
 
+      case 'browser_image_list':
+        return this.handleImageList(args);
       case 'browser_link_extract':
         return this.handleLinkExtract(args);
 
@@ -1043,6 +1045,37 @@ export class AlyBrowserMCPServer {
     }
     if (data.rowCount > 20) lines.push(`... ${data.rowCount - 20} more rows`);
 
+    return textResult(lines.join('\n'));
+  }
+
+  private async handleImageList(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const imgs = [...document.querySelectorAll('img')].map(img => ({
+        src: (img.src || '').slice(0, 200),
+        alt: img.alt || '',
+        width: img.naturalWidth || img.width,
+        height: img.naturalHeight || img.height,
+        loaded: img.complete && img.naturalHeight > 0,
+        hasAlt: img.hasAttribute('alt'),
+      }));
+      const broken = imgs.filter(i => !i.loaded).length;
+      const missingAlt = imgs.filter(i => !i.hasAlt).length;
+      return JSON.stringify({ total: imgs.length, broken, missingAlt, images: imgs.slice(0, 50) });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = [
+      `[Images] ${data.total} images (${data.broken} broken, ${data.missingAlt} missing alt)`,
+    ];
+    for (const img of data.images) {
+      const status = img.loaded ? '✓' : '✗';
+      const alt = img.hasAlt ? `"${img.alt.slice(0, 50)}"` : '(no alt)';
+      lines.push(`  ${status} ${img.width}x${img.height} ${alt} → ${img.src.slice(0, 80)}`);
+    }
+    if (data.total > 50) lines.push(`  ... ${data.total - 50} more`);
     return textResult(lines.join('\n'));
   }
 

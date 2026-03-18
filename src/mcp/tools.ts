@@ -610,6 +610,20 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  {
+    name: 'browser_image_list',
+    description:
+      'List all images on the current page with src, alt text, dimensions, and loading status. ' +
+      'Useful for content auditing, finding broken images, and checking alt text coverage.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Element Inspector ──────────────────────────────────────
   {
     name: 'browser_element_info',
