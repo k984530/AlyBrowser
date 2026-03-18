@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Page Weight
+      case 'browser_page_size':
+        return this.handlePageSize(args);
+
       // Cookie Profile
       case 'browser_cookie_export':
         return this.handleCookieExport(args);
@@ -942,6 +946,68 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Page Weight ───────────────────────────────────────────
+
+  private async handlePageSize(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const entries = performance.getEntriesByType('resource');
+      const byType = {};
+      let totalSize = 0;
+      const heaviest = [];
+
+      for (const e of entries) {
+        const size = e.transferSize || 0;
+        totalSize += size;
+        const ext = e.name.split('/').pop()?.split('?')[0]?.split('.').pop() || 'other';
+        const type = e.initiatorType || 'other';
+        const cat = type === 'img' ? 'images' : type === 'script' ? 'scripts' : type === 'css' || type === 'link' ? 'stylesheets' : ext === 'woff2' || ext === 'woff' || ext === 'ttf' ? 'fonts' : 'other';
+        byType[cat] = (byType[cat] || 0) + size;
+        heaviest.push({ url: e.name.slice(0, 120), size, type: cat });
+      }
+
+      heaviest.sort((a, b) => b.size - a.size);
+      const htmlSize = new Blob([document.documentElement.outerHTML]).size;
+      const inlineScripts = [...document.querySelectorAll('script:not([src])')].reduce((s, el) => s + (el.textContent || '').length, 0);
+      const inlineStyles = [...document.querySelectorAll('style')].reduce((s, el) => s + (el.textContent || '').length, 0);
+
+      return JSON.stringify({
+        totalTransfer: totalSize,
+        htmlSize,
+        inlineJS: inlineScripts,
+        inlineCSS: inlineStyles,
+        byCategory: byType,
+        resourceCount: entries.length,
+        heaviest: heaviest.slice(0, 10),
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const fmt = (b: number) => b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : b > 1024 ? `${(b / 1024).toFixed(1)} KB` : `${b} B`;
+
+    const lines = [
+      `[Page Size] Total transfer: ${fmt(data.totalTransfer)} (${data.resourceCount} resources)`,
+      `  HTML: ${fmt(data.htmlSize)}`,
+      `  Inline JS: ${fmt(data.inlineJS)}`,
+      `  Inline CSS: ${fmt(data.inlineCSS)}`,
+      '',
+      '── By Category ──',
+    ];
+    for (const [cat, size] of Object.entries(data.byCategory).sort((a, b) => (b[1] as number) - (a[1] as number))) {
+      lines.push(`  ${cat}: ${fmt(size as number)}`);
+    }
+    if (data.heaviest.length > 0) {
+      lines.push('', '── Heaviest Resources ──');
+      for (const h of data.heaviest.slice(0, 5)) {
+        lines.push(`  ${fmt(h.size)} [${h.type}] ${h.url.slice(0, 80)}`);
+      }
+    }
 
     return textResult(lines.join('\n'));
   }

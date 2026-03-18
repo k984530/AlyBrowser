@@ -563,6 +563,21 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Page Weight ───────────────────────────────────────────
+  {
+    name: 'browser_page_size',
+    description:
+      'Analyze total page weight: HTML size, inline CSS/JS, external resources, images, fonts. ' +
+      'Reports transfer sizes and identifies the heaviest resources. Useful for page diet/optimization.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Cookie Profile ────────────────────────────────────────
   {
     name: 'browser_cookie_export',
