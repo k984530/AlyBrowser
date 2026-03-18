@@ -5,6 +5,11 @@ import * as os from 'os';
 
 const SCREENSHOT_DIR = path.join(os.tmpdir(), 'aly-screen');
 
+/** Escape a string for safe use inside AppleScript double-quoted strings */
+function escapeAppleScript(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 export function ensureDir(): void {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 }
@@ -17,8 +22,9 @@ export function captureScreen(options?: { windowTitle?: string }): string {
 
   // Get the window ID of the target or frontmost window
   try {
+    const safeTarget = target ? escapeAppleScript(target) : '';
     const script = target
-      ? `tell application "System Events" to get id of front window of (first process whose name contains "${target}")`
+      ? `tell application "System Events" to get id of front window of (first process whose name contains "${safeTarget}")`
       : `tell application "System Events" to get id of front window of first process whose frontmost is true`;
     const windowId = execSync(`osascript -e '${script}'`, {
       encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
@@ -64,8 +70,7 @@ export function rightClickAt(x: number, y: number): void {
 
 /** Type text using System Events */
 export function typeText(text: string): void {
-  // Escape single quotes for osascript
-  const escaped = text.replace(/'/g, "'\"'\"'");
+  const escaped = escapeAppleScript(text);
   execSync(`osascript -e 'tell application "System Events" to keystroke "${escaped}"'`, { stdio: 'pipe' });
 }
 

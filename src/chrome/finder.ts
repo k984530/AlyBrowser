@@ -81,35 +81,8 @@ export function findChromeForTesting(projectRoot?: string): string {
   for (const root of roots) {
     const chromeDir = path.join(root, 'chrome');
     if (!fs.existsSync(chromeDir)) continue;
-
-    try {
-      for (const entry of fs.readdirSync(chromeDir)) {
-        const platform = process.platform;
-        let binary: string;
-
-        if (platform === 'darwin') {
-          binary = path.join(
-            chromeDir, entry, 'chrome-mac-arm64',
-            'Google Chrome for Testing.app', 'Contents', 'MacOS',
-            'Google Chrome for Testing',
-          );
-          if (fs.existsSync(binary)) return binary;
-          // Also check x64
-          binary = path.join(
-            chromeDir, entry, 'chrome-mac-x64',
-            'Google Chrome for Testing.app', 'Contents', 'MacOS',
-            'Google Chrome for Testing',
-          );
-          if (fs.existsSync(binary)) return binary;
-        } else if (platform === 'linux') {
-          binary = path.join(chromeDir, entry, 'chrome-linux64', 'chrome');
-          if (fs.existsSync(binary)) return binary;
-        } else if (platform === 'win32') {
-          binary = path.join(chromeDir, entry, 'chrome-win64', 'chrome.exe');
-          if (fs.existsSync(binary)) return binary;
-        }
-      }
-    } catch {}
+    const found = scanForChromeBinary(chromeDir);
+    if (found) return found;
   }
 
   // 3. Auto-install Chrome for Testing in ~/.aly-browser/chrome
@@ -143,11 +116,11 @@ function autoInstallChromeForTesting(baseDir: string): string | null {
     );
     // Remove macOS quarantine
     if (process.platform === 'darwin') {
-      try { execSync(`xattr -c "${chromeDir}"`, { stdio: 'ignore' }); } catch {}
+      try { execSync(`xattr -c "${chromeDir}"`, { stdio: 'ignore' }); } catch (err) { /* xattr removal optional */ }
     }
     const found = scanForChromeBinary(chromeDir);
     if (found) return found;
-  } catch {}
+  } catch (err) { /* Chrome install failed — fall through to null */ }
 
   return null;
 }
@@ -174,6 +147,6 @@ function scanForChromeBinary(chromeDir: string): string | null {
         if (fs.existsSync(binary)) return binary;
       }
     }
-  } catch {}
+  } catch (err) { /* directory scan failed */ }
   return null;
 }
