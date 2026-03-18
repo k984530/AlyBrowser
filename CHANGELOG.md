@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0] - 2026-03-18
+
+### Added
+- **`browser_table_extract`**: Structured HTML table data extraction (headers + rows as JSON)
+- **`browser_link_extract`**: Page link extraction with internal/external filter
+- AI framework integration guide (LangChain, CrewAI, Claude Code examples)
+- 60 MCP tools, 440 tests
+
 ## [1.2.0] - 2026-03-18
 
 ### Added
