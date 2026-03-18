@@ -1429,5 +1429,227 @@ describe('AlyBrowserMCPServer', () => {
       expect(result.isError).toBeFalsy();
       expect(result.content[0].text).toContain('removed');
     });
+
+    // ── Coverage boost: additional eval-based handlers ─────
+    it('permissions_check returns permission states', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify([
+        { name: 'geolocation', state: 'granted' },
+        { name: 'notifications', state: 'denied' },
+        { name: 'camera', state: 'prompt' },
+      ]));
+
+      const result = await (mcp as any).handleTool('browser_permissions_check', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('geolocation');
+      expect(result.content[0].text).toContain('granted');
+    });
+
+    it('indexeddb_list returns databases', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        supported: true, count: 1,
+        databases: [{ name: 'mydb', version: 1, stores: ['users', 'settings'] }],
+      }));
+
+      const result = await (mcp as any).handleTool('browser_indexeddb_list', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('mydb');
+    });
+
+    it('service_worker_info returns status', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        supported: true, registered: true,
+        scope: 'https://example.com/', scriptURL: '/sw.js', state: 'active',
+        updateViaCache: false, caches: ['v1-assets'], cacheCount: 1,
+      }));
+
+      const result = await (mcp as any).handleTool('browser_service_worker_info', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('sw.js');
+    });
+
+    it('resource_hints returns analysis', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        hints: {
+          preload: [{ href: '/main.js', as: 'script' }],
+          prefetch: [], preconnect: [], 'dns-prefetch': [], modulepreload: [],
+        },
+        total: 1, suggestions: [],
+      }));
+
+      const result = await (mcp as any).handleTool('browser_resource_hints', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('preload');
+    });
+
+    it('network_log returns requests', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify([
+        { url: 'https://api.example.com/data', type: 'fetch', size: 1234, duration: 50, start: 100 },
+      ]));
+
+      const result = await (mcp as any).handleTool('browser_network_log', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('api.example.com');
+    });
+
+    it('a11y_audit returns accessibility issues', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify([
+        { severity: 'critical', rule: 'missing-alt', tag: 'img', msg: 'img without alt text' },
+        { severity: 'warning', rule: 'missing-label', tag: 'input', msg: 'input without label' },
+      ]));
+
+      const result = await (mcp as any).handleTool('browser_a11y_audit', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('missing-alt');
+    });
+
+    it('meta_seo returns SEO data', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        title: 'Test Page', titleLength: 9,
+        description: 'A test page', descriptionLength: 11,
+        canonical: 'https://example.com',
+        og: { title: 'Test', description: 'desc', image: '/og.png', url: null, type: null },
+        twitter: { card: null, title: null, description: null, image: null },
+        headings: { h1: ['Main Title'], h2: ['Sub1', 'Sub2'] },
+        robots: 'index, follow', lang: 'en',
+        jsonLd: [], issues: [],
+      }));
+
+      const result = await (mcp as any).handleTool('browser_meta_seo', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Test Page');
+    });
+
+    it('element_info returns element details', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        tag: 'button', id: 'submit-btn', className: 'btn primary',
+        text: 'Submit', bounds: { x: 100, y: 200, width: 120, height: 40 },
+        styles: { color: 'white', backgroundColor: 'blue', display: 'block',
+          visibility: 'visible', position: 'relative', fontSize: '14px',
+          fontFamily: 'Arial', fontWeight: '700', opacity: '1', zIndex: 'auto', overflow: 'visible' },
+        attributes: { type: 'submit' },
+        childCount: 1, visible: true,
+      }));
+
+      const result = await (mcp as any).handleTool('browser_element_info', { selector: '#submit-btn' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('submit-btn');
+    });
+
+    it('table_extract returns table data', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        headers: ['Name', 'Price'],
+        rows: [['Widget', '$10'], ['Gadget', '$20']],
+        rowCount: 2,
+      }));
+
+      const result = await (mcp as any).handleTool('browser_table_extract', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Widget');
+    });
+
+    it('link_extract returns links', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        links: [
+          { href: 'https://example.com/about', text: 'About', internal: true },
+          { href: 'https://other.com', text: 'External', internal: false },
+        ],
+        total: 2, internal: 1, external: 1,
+      }));
+
+      const result = await (mcp as any).handleTool('browser_link_extract', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('About');
+    });
+
+    it('image_list returns images', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        images: [
+          { src: '/logo.png', alt: 'Logo', width: 200, height: 50, loading: 'eager' },
+          { src: '/hero.jpg', alt: '', width: 1200, height: 600, loading: 'lazy' },
+        ],
+        total: 2, missingAlt: 1,
+      }));
+
+      const result = await (mcp as any).handleTool('browser_image_list', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('logo.png');
+    });
+
+    it('dark_mode detect returns mode info', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        systemPreference: 'dark', pageBackground: 'dark',
+        backgroundColor: 'rgb(0,0,0)', textColor: 'rgb(255,255,255)',
+        respectsPreference: true, colorSchemeAttr: 'dark', dataTheme: null,
+      }));
+
+      const result = await (mcp as any).handleTool('browser_dark_mode', { action: 'detect' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('dark');
+    });
+
+    it('captcha_detect returns detection result', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+      (bridge as any).evaluate = vi.fn().mockResolvedValue(JSON.stringify({
+        detected: false, types: [], blocking: false,
+      }));
+
+      const result = await (mcp as any).handleTool('browser_captcha_detect', {});
+      expect(result.isError).toBeFalsy();
+    });
+
+    it('cookie_set calls bridge.cookieSet', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_cookie_set', {
+        url: 'https://example.com', name: 'test', value: 'val',
+      });
+      expect(result.isError).toBeFalsy();
+      expect((bridge as any).cookieSet).toHaveBeenCalled();
+    });
+
+    it('cookie_delete calls bridge.cookieDelete', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_cookie_delete', {
+        url: 'https://example.com', name: 'test',
+      });
+      expect(result.isError).toBeFalsy();
+    });
+
+    it('tab_new calls bridge.tabNew', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_tab_new', { url: 'https://example.com' });
+      expect(result.isError).toBeFalsy();
+      expect((bridge as any).tabNew).toHaveBeenCalledWith('https://example.com');
+    });
   });
 });
