@@ -563,6 +563,24 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Style Override ────────────────────────────────────────
+  {
+    name: 'browser_style_override',
+    description:
+      'Inject or remove custom CSS styles on the page. Useful for hiding elements, ' +
+      'changing colors, testing layout changes, or removing popups/overlays.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['inject', 'remove', 'list'], description: 'inject (default), remove, or list active overrides' },
+        css: { type: 'string', description: 'CSS rules to inject (for inject action)' },
+        id: { type: 'string', description: 'Override ID to remove (for remove action)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Local Storage ─────────────────────────────────────────
   {
     name: 'browser_local_storage',

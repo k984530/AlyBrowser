@@ -443,6 +443,20 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_style_override inject requires css', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_style_override', { action: 'inject' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('"css" is required');
+  });
+
+  it('browser_style_override remove requires id', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_style_override', { action: 'remove' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('"id" is required');
+  });
+
   it('browser_local_storage throws without session', async () => {
     const mcp = create();
     await expect((mcp as any).handleTool('browser_local_storage', {})).rejects.toThrow('No browser session');

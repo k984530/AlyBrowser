@@ -96,7 +96,7 @@ export class AlyBrowserMCPServer {
 
   constructor() {
     this.server = new Server(
-      { name: 'aly-browser', version: process.env.npm_package_version || '1.5.0' },
+      { name: 'aly-browser', version: process.env.npm_package_version || '1.6.0' },
       {
         capabilities: { tools: {} },
         instructions: INSTRUCTIONS,
@@ -300,6 +300,10 @@ export class AlyBrowserMCPServer {
       // Performance
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
+
+      // Style Override
+      case 'browser_style_override':
+        return this.handleStyleOverride(args);
 
       // Local Storage
       case 'browser_local_storage':
@@ -963,6 +967,54 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Style Override ────────────────────────────────────────
+
+  private async handleStyleOverride(args: Record<string, unknown>): Promise<ToolResult> {
+    const action = (args.action as string) || 'inject';
+
+    if (action === 'inject' && !args.css) return errorResult('"css" is required for inject action');
+    if (action === 'remove' && !args.id) return errorResult('"id" is required for remove action');
+
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    if (action === 'inject') {
+      const css = args.css as string;
+      const cssJson = JSON.stringify(css);
+      const result = await bridge.evaluate(`(() => {
+        const id = 'aly-style-' + Date.now();
+        const style = document.createElement('style');
+        style.id = id;
+        style.setAttribute('data-aly-override', 'true');
+        style.textContent = ${cssJson};
+        document.head.appendChild(style);
+        return JSON.stringify({ id, length: ${cssJson}.length });
+      })()`, tabId);
+      const data = typeof result === 'string' ? JSON.parse(result) : result;
+      return textResult(`[Style] Injected "${data.id}" (${data.length} chars)`);
+    }
+
+    if (action === 'remove') {
+      const id = args.id as string;
+      await bridge.evaluate(`document.getElementById(${JSON.stringify(id)})?.remove()`, tabId);
+      return textResult(`[Style] Removed "${id}"`);
+    }
+
+    // list
+    const result = await bridge.evaluate(`(() => {
+      const styles = [...document.querySelectorAll('style[data-aly-override]')];
+      return JSON.stringify(styles.map(s => ({ id: s.id, length: (s.textContent || '').length, preview: (s.textContent || '').slice(0, 80) })));
+    })()`, tabId);
+    const styles = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (styles.length === 0) return textResult('[Style] No active overrides');
+    const lines = [`[Style] ${styles.length} active override(s)`];
+    for (const s of styles) {
+      lines.push(`  ${s.id} (${s.length} chars): ${s.preview}`);
+    }
     return textResult(lines.join('\n'));
   }
 
