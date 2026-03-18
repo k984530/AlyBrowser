@@ -35,7 +35,7 @@ describe('screen', () => {
     mockedStatSync.mockReturnValue({ size: 1024 } as fs.Stats);
   });
 
-  describe('escapeAppleScript (via captureScreen)', () => {
+  describe.skipIf(process.platform === 'linux')('escapeAppleScript (via captureScreen — macOS only)', () => {
     it('captures screen without windowTitle', () => {
       mockedExecSync.mockReturnValueOnce('12345' as any); // window ID
       mockedExecSync.mockReturnValueOnce('' as any); // screencapture
@@ -123,7 +123,7 @@ describe('screen', () => {
     });
   });
 
-  describe('clickAt', () => {
+  describe.skipIf(process.platform === 'linux')('clickAt (macOS)', () => {
     it('performs single click at coordinates', () => {
       screen.clickAt(100, 200);
 
@@ -147,7 +147,7 @@ describe('screen', () => {
     });
   });
 
-  describe('rightClickAt', () => {
+  describe.skipIf(process.platform === 'linux')('rightClickAt (macOS)', () => {
     it('performs right click at coordinates', () => {
       screen.rightClickAt(300, 400);
 
@@ -159,7 +159,7 @@ describe('screen', () => {
     });
   });
 
-  describe('typeText', () => {
+  describe.skipIf(process.platform === 'linux')('typeText (macOS)', () => {
     it('types plain text', () => {
       screen.typeText('hello');
 
@@ -183,7 +183,7 @@ describe('screen', () => {
     });
   });
 
-  describe('pressKey', () => {
+  describe.skipIf(process.platform === 'linux')('pressKey (macOS)', () => {
     it('presses enter key', () => {
       screen.pressKey('enter');
 
@@ -239,7 +239,7 @@ describe('screen', () => {
     });
   });
 
-  describe('moveTo', () => {
+  describe.skipIf(process.platform === 'linux')('moveTo (macOS)', () => {
     it('moves mouse to coordinates', () => {
       screen.moveTo(500, 600);
 
@@ -250,7 +250,7 @@ describe('screen', () => {
     });
   });
 
-  describe('scroll', () => {
+  describe.skipIf(process.platform === 'linux')('scroll (macOS)', () => {
     it('scrolls down with positive deltaY', () => {
       screen.scroll(5);
 
@@ -299,7 +299,7 @@ describe('screen', () => {
     });
   });
 
-  describe('getScreenSize', () => {
+  describe.skipIf(process.platform === 'linux')('getScreenSize (macOS)', () => {
     it('returns screen dimensions', () => {
       const mockValue = process.platform === 'linux' ? '1920 1080\n' : '{"width":1920,"height":1080}\n';
       mockedExecSync.mockReturnValueOnce(mockValue as any);
