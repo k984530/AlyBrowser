@@ -563,6 +563,22 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Data Extraction ────────────────────────────────────────
+  {
+    name: 'browser_table_extract',
+    description:
+      'Extract data from HTML tables on the current page. Returns structured JSON arrays with headers and rows. ' +
+      'Supports multiple tables via index parameter. Useful for scraping price lists, leaderboards, data grids.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        index: { type: 'number', description: 'Table index (0-based, default: 0). Use -1 for all tables.' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Element Inspector ──────────────────────────────────────
   {
     name: 'browser_element_info',

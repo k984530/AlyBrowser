@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Data Extraction
+      case 'browser_table_extract':
+        return this.handleTableExtract(args);
+
       // Element Inspector
       case 'browser_element_info':
         return this.handleElementInfo(args);
@@ -903,6 +907,74 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Data Extraction ────────────────────────────────────────
+
+  private async handleTableExtract(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const index = (args.index as number) ?? 0;
+
+    const result = await bridge.evaluate(`(() => {
+      const tables = document.querySelectorAll('table');
+      if (tables.length === 0) return JSON.stringify({ error: 'No tables found on page' });
+
+      const extractTable = (table) => {
+        const headers = [...table.querySelectorAll('thead th, thead td, tr:first-child th')]
+          .map(th => th.textContent.trim());
+        const rows = [...table.querySelectorAll('tbody tr, tr')]
+          .filter(tr => !tr.querySelector('th') || tr.closest('thead'))
+          .filter(tr => !tr.closest('thead'))
+          .map(tr => [...tr.querySelectorAll('td')]
+            .map(td => td.textContent.trim().slice(0, 200)));
+        // If no thead, use first row as headers
+        if (headers.length === 0 && rows.length > 0) {
+          const firstRow = [...table.querySelectorAll('tr:first-child td, tr:first-child th')]
+            .map(c => c.textContent.trim());
+          if (firstRow.length > 0) return { headers: firstRow, rows: rows.slice(1), rowCount: rows.length - 1 };
+        }
+        return { headers, rows, rowCount: rows.length };
+      };
+
+      const idx = ${index};
+      if (idx === -1) {
+        return JSON.stringify([...tables].map((t, i) => ({ tableIndex: i, ...extractTable(t) })));
+      }
+      if (idx >= tables.length) return JSON.stringify({ error: 'Table index ' + idx + ' out of range (found ' + tables.length + ')' });
+      return JSON.stringify(extractTable(tables[idx]));
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (data.error) {
+      return errorResult(data.error);
+    }
+
+    if (Array.isArray(data)) {
+      // Multiple tables
+      const lines = [`[Tables] ${data.length} tables found`];
+      for (const t of data) {
+        lines.push('', `── Table ${t.tableIndex} (${t.rowCount} rows) ──`);
+        if (t.headers.length > 0) lines.push(`  Headers: ${t.headers.join(' | ')}`);
+        for (const row of t.rows.slice(0, 5)) {
+          lines.push(`  ${row.join(' | ')}`);
+        }
+        if (t.rowCount > 5) lines.push(`  ... ${t.rowCount - 5} more rows`);
+      }
+      return textResult(lines.join('\n'));
+    }
+
+    // Single table
+    const lines = [`[Table] ${data.rowCount} rows`];
+    if (data.headers.length > 0) lines.push(`Headers: ${data.headers.join(' | ')}`);
+    lines.push('');
+    for (const row of data.rows.slice(0, 20)) {
+      lines.push(row.join(' | '));
+    }
+    if (data.rowCount > 20) lines.push(`... ${data.rowCount - 20} more rows`);
 
     return textResult(lines.join('\n'));
   }
