@@ -563,6 +563,21 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── CSS Coverage ─────────────────────────────────────────
+  {
+    name: 'browser_css_coverage',
+    description:
+      'Analyze CSS usage on the current page. Reports total stylesheets, rules, and estimates ' +
+      'unused rules by testing selectors against live DOM. Useful for identifying CSS bloat.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Network Throttle ─────────────────────────────────────
   {
     name: 'browser_network_throttle',

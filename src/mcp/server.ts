@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // CSS Coverage
+      case 'browser_css_coverage':
+        return this.handleCssCoverage(args);
+
       // Network Throttle
       case 'browser_network_throttle':
         return this.handleNetworkThrottle(args);
@@ -1078,6 +1082,49 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── CSS Coverage ─────────────────────────────────────────
+
+  private async handleCssCoverage(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      let totalRules = 0, usedRules = 0, unusedSelectors = [];
+      const sheets = [...document.styleSheets];
+      for (const ss of sheets) {
+        try {
+          const rules = [...ss.cssRules];
+          for (const rule of rules) {
+            if (rule.type !== 1) continue; // CSSStyleRule only
+            totalRules++;
+            try {
+              if (document.querySelector(rule.selectorText)) { usedRules++; }
+              else { unusedSelectors.push(rule.selectorText); }
+            } catch { usedRules++; } // invalid selector = assume used
+          }
+        } catch {} // cross-origin
+      }
+      const pct = totalRules > 0 ? Math.round((usedRules / totalRules) * 100) : 100;
+      return JSON.stringify({
+        stylesheets: sheets.length, totalRules, usedRules,
+        unusedRules: totalRules - usedRules, coveragePct: pct,
+        topUnused: unusedSelectors.slice(0, 15),
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = [
+      `[CSS Coverage] ${data.coveragePct}% used (${data.usedRules}/${data.totalRules} rules)`,
+      `  Stylesheets: ${data.stylesheets}`,
+      `  Unused rules: ${data.unusedRules}`,
+    ];
+    if (data.topUnused.length > 0) {
+      lines.push('', '── Top Unused Selectors ──');
+      for (const s of data.topUnused) lines.push(`  ${s}`);
+    }
     return textResult(lines.join('\n'));
   }
 
