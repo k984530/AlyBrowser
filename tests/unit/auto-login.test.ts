@@ -239,4 +239,77 @@ describe('AutoLoginManager', () => {
       expect(steps[1].domain).toBe('example.com');
     });
   });
+
+  // ── Edge cases ───────────────────────────────────────────
+
+  describe('edge cases', () => {
+    it('handles credential with empty steps array', () => {
+      mgr.addCredential({
+        domain: 'empty.com',
+        loginUrl: 'https://empty.com/login',
+        steps: [],
+        sessionIndicators: [],
+      });
+      const steps = mgr.getLoginSteps('empty.com');
+      expect(steps).toHaveLength(1);
+      expect(steps[0].steps).toHaveLength(0);
+    });
+
+    it('handles multiple session indicators', () => {
+      const cred: LoginCredential = {
+        domain: 'multi.com',
+        loginUrl: 'https://multi.com/login',
+        steps: [],
+        sessionIndicators: ['sid', 'auth', 'csrf_token'],
+      };
+      mgr.addCredential(cred);
+      expect(mgr.getCredential('multi.com')!.sessionIndicators).toHaveLength(3);
+    });
+
+    it('getCachedState returns null after manual clear', () => {
+      mgr.updateState('test.com', true);
+      expect(mgr.getCachedState('test.com')).not.toBeNull();
+      // Simulate TTL expiry by accessing internal cache
+      const cache = (mgr as any).stateCache as Map<string, any>;
+      cache.get('test.com').checkedAt = Date.now() - 10 * 60 * 1000; // 10min ago
+      expect(mgr.getCachedState('test.com')).toBeNull();
+    });
+
+    it('resolveLoginChain for unknown domain returns single entry', () => {
+      const chain = mgr.resolveLoginChain('nonexistent.com');
+      expect(chain).toEqual(['nonexistent.com']);
+    });
+
+    it('addCredential with all login step types', () => {
+      mgr.addCredential({
+        domain: 'steps.com',
+        loginUrl: 'https://steps.com/login',
+        steps: [
+          { action: 'navigate', target: 'https://steps.com/login' },
+          { action: 'type', target: '@e1', value: 'user' },
+          { action: 'type', target: '@e2', value: 'pass' },
+          { action: 'click', target: '@e3' },
+          { action: 'wait', target: '.dashboard' },
+          { action: 'waitForStable', target: '' },
+        ],
+        sessionIndicators: ['sid'],
+      });
+      const cred = mgr.getCredential('steps.com');
+      expect(cred!.steps).toHaveLength(6);
+      expect(cred!.steps.map(s => s.action)).toEqual([
+        'navigate', 'type', 'type', 'click', 'wait', 'waitForStable',
+      ]);
+    });
+
+    it('persists multiple credentials across restart', () => {
+      mgr.addCredential({ ...sampleCredential, domain: 'a.com', loginUrl: 'https://a.com' });
+      mgr.addCredential({ ...sampleCredential, domain: 'b.com', loginUrl: 'https://b.com' });
+      mgr.addCredential({ ...sampleCredential, domain: 'c.com', loginUrl: 'https://c.com' });
+
+      const mgr2 = new AutoLoginManager();
+      expect(mgr2.listDomains()).toContain('a.com');
+      expect(mgr2.listDomains()).toContain('b.com');
+      expect(mgr2.listDomains()).toContain('c.com');
+    });
+  });
 });
