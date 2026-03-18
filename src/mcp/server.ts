@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Font List
+      case 'browser_font_list':
+        return this.handleFontList(args);
+
       // Color Picker
       case 'browser_color_picker':
         return this.handleColorPicker(args);
@@ -974,6 +978,56 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Font List ─────────────────────────────────────────────
+
+  private async handleFontList(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const fonts = {};
+      const sizes = {};
+      const weights = {};
+      const sample = [...document.querySelectorAll('*')].slice(0, 500);
+      for (const el of sample) {
+        if (el.offsetParent === null && el.tagName !== 'BODY' && el.tagName !== 'HTML') continue;
+        const cs = getComputedStyle(el);
+        const family = cs.fontFamily.split(',')[0].trim().replace(/["']/g, '');
+        const size = cs.fontSize;
+        const weight = cs.fontWeight;
+        if (family) fonts[family] = (fonts[family] || 0) + 1;
+        if (size) sizes[size] = (sizes[size] || 0) + 1;
+        if (weight) weights[weight] = (weights[weight] || 0) + 1;
+      }
+      // Detect loaded web fonts
+      const webFonts = [...document.fonts].filter(f => f.status === 'loaded').map(f => ({ family: f.family, style: f.style, weight: f.weight }));
+      const sort = (obj) => Object.entries(obj).sort((a,b) => b[1] - a[1]).slice(0, 10).map(([k, n]) => ({ value: k, count: n }));
+      return JSON.stringify({ families: sort(fonts), sizes: sort(sizes), weights: sort(weights), webFonts: webFonts.slice(0, 10) });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = ['[Font Analysis]'];
+
+    if (data.families.length) {
+      lines.push('', '── Font Families ──');
+      for (const f of data.families) lines.push(`  ${f.value} (${f.count}x)`);
+    }
+    if (data.sizes.length) {
+      lines.push('', '── Font Sizes ──');
+      for (const s of data.sizes) lines.push(`  ${s.value} (${s.count}x)`);
+    }
+    if (data.weights.length) {
+      lines.push('', '── Font Weights ──');
+      for (const w of data.weights) lines.push(`  ${w.value} (${w.count}x)`);
+    }
+    if (data.webFonts.length) {
+      lines.push('', '── Web Fonts (loaded) ──');
+      for (const wf of data.webFonts) lines.push(`  ${wf.family} ${wf.weight} ${wf.style}`);
+    }
 
     return textResult(lines.join('\n'));
   }

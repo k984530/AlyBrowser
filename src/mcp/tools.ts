@@ -563,6 +563,21 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Font List ─────────────────────────────────────────────
+  {
+    name: 'browser_font_list',
+    description:
+      'Analyze fonts used on the current page. Reports font families, sizes, weights, and element counts. ' +
+      'Detects custom web fonts vs system fonts. Useful for design consistency audits.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Color Picker ──────────────────────────────────────────
   {
     name: 'browser_color_picker',
