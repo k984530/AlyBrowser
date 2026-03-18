@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Scroll Map
+      case 'browser_scroll_map':
+        return this.handleScrollMap(args);
+
       // Dark Mode
       case 'browser_dark_mode':
         return this.handleDarkMode(args);
@@ -924,6 +928,66 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Scroll Map ────────────────────────────────────────────
+
+  private async handleScrollMap(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const numSections = (args.sections as number) ?? 5;
+
+    const result = await bridge.evaluate(`(() => {
+      const docH = document.documentElement.scrollHeight;
+      const vw = window.innerWidth;
+      const n = ${numSections};
+      const sectionH = docH / n;
+      const sections = [];
+
+      for (let i = 0; i < n; i++) {
+        const top = i * sectionH;
+        const bottom = top + sectionH;
+        let elements = 0, interactive = 0, images = 0, textLen = 0;
+
+        document.querySelectorAll('*').forEach(el => {
+          const rect = el.getBoundingClientRect();
+          const absTop = rect.top + window.scrollY;
+          const absBottom = absTop + rect.height;
+          if (absBottom < top || absTop > bottom) return;
+
+          elements++;
+          const tag = el.tagName.toLowerCase();
+          if (['a','button','input','select','textarea'].includes(tag)) interactive++;
+          if (tag === 'img') images++;
+          if (['p','span','h1','h2','h3','h4','h5','h6','li','td','th'].includes(tag)) {
+            textLen += (el.textContent || '').length;
+          }
+        });
+
+        sections.push({
+          range: Math.round(top) + '-' + Math.round(bottom) + 'px',
+          pct: Math.round((i/n)*100) + '-' + Math.round(((i+1)/n)*100) + '%',
+          elements, interactive, images,
+          textDensity: textLen > 10000 ? 'high' : textLen > 3000 ? 'medium' : 'low',
+          textChars: textLen,
+        });
+      }
+
+      return JSON.stringify({ pageHeight: docH, viewportHeight: window.innerHeight, sections });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = [
+      `[Scroll Map] ${data.pageHeight}px page, ${data.viewportHeight}px viewport, ${numSections} sections`,
+      '',
+    ];
+
+    for (const s of data.sections) {
+      const bar = s.textDensity === 'high' ? '████' : s.textDensity === 'medium' ? '██' : '█';
+      lines.push(`  ${s.pct.padEnd(10)} ${bar} ${s.elements} els, ${s.interactive} interactive, ${s.images} imgs, ${s.textChars} chars`);
+    }
 
     return textResult(lines.join('\n'));
   }

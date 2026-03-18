@@ -563,6 +563,23 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Scroll Map ────────────────────────────────────────────
+  {
+    name: 'browser_scroll_map',
+    description:
+      'Analyze page content density by scroll position. Divides the page into vertical sections ' +
+      'and reports element count, interactive elements, text density, and images per section. ' +
+      'Useful for understanding page layout, finding content-heavy zones, and UX analysis.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sections: { type: 'number', description: 'Number of vertical sections to divide page into (default: 5)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Dark Mode ─────────────────────────────────────────────
   {
     name: 'browser_dark_mode',
