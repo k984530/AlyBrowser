@@ -362,4 +362,106 @@ describe('content.js snapshot', () => {
       expect(snap).toContain('visible-text');
     });
   });
+
+  // ── Additional snapshot edge cases ────────────────────────
+
+  describe('snapshot edge cases', () => {
+    it('includes checkbox state', () => {
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = true;
+      document.body.innerHTML = '';
+      document.body.appendChild(cb);
+
+      const snap = funcs.buildSnapshot();
+      expect(snap).toContain('checked');
+    });
+
+    it('includes unchecked checkbox state', () => {
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = false;
+      document.body.innerHTML = '';
+      document.body.appendChild(cb);
+
+      const snap = funcs.buildSnapshot();
+      expect(snap).toContain('unchecked');
+    });
+
+    it('includes disabled state indicator', () => {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.disabled = true;
+      document.body.innerHTML = '';
+      document.body.appendChild(input);
+
+      const snap = funcs.buildSnapshot();
+      expect(snap).toContain('disabled');
+    });
+
+    it('includes required state indicator', () => {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.required = true;
+      document.body.innerHTML = '';
+      document.body.appendChild(input);
+
+      const snap = funcs.buildSnapshot();
+      expect(snap).toContain('required');
+    });
+
+    it('includes textarea value', () => {
+      const ta = document.createElement('textarea');
+      ta.value = 'multiline content';
+      document.body.innerHTML = '';
+      document.body.appendChild(ta);
+
+      const snap = funcs.buildSnapshot();
+      expect(snap).toContain('multiline content');
+    });
+
+    it('includes link text', () => {
+      const a = document.createElement('a');
+      a.href = 'https://example.com';
+      a.textContent = 'Click here';
+      document.body.innerHTML = '';
+      document.body.appendChild(a);
+
+      const snap = funcs.buildSnapshot();
+      expect(snap).toContain('Click here');
+      expect(snap).toContain('link');
+    });
+
+    it('includes heading role', () => {
+      const h1 = document.createElement('h1');
+      h1.textContent = 'Page Title';
+      document.body.innerHTML = '';
+      document.body.appendChild(h1);
+
+      const snap = funcs.buildSnapshot();
+      expect(snap).toContain('heading');
+      expect(snap).toContain('Page Title');
+    });
+
+    it('includes button text', () => {
+      const btn = document.createElement('button');
+      btn.textContent = 'Submit';
+      document.body.innerHTML = '';
+      document.body.appendChild(btn);
+
+      const snap = funcs.buildSnapshot();
+      expect(snap).toContain('button');
+      expect(snap).toContain('Submit');
+    });
+
+    it('assigns ref IDs to interactive elements', () => {
+      const btn = document.createElement('button');
+      btn.textContent = 'Test';
+      document.body.innerHTML = '';
+      document.body.appendChild(btn);
+
+      const snap = funcs.buildSnapshot();
+      expect(snap).toContain('@e');
+    });
+  });
 });
