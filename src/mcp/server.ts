@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Local Storage
+      case 'browser_local_storage':
+        return this.handleLocalStorage(args);
+
       // Wait for Text
       case 'browser_wait_for_text':
         return this.handleWaitForText(args);
@@ -959,6 +963,77 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Local Storage ─────────────────────────────────────────
+
+  private async handleLocalStorage(args: Record<string, unknown>): Promise<ToolResult> {
+    const action = (args.action as string) || 'list';
+    const key = args.key as string | undefined;
+    const value = args.value as string | undefined;
+
+    if (action === 'set' && (!key || value === undefined)) {
+      return errorResult('"key" and "value" required for set action');
+    }
+    if (action === 'delete' && !key) {
+      return errorResult('"key" required for delete action');
+    }
+
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const action = ${JSON.stringify(action)};
+      const key = ${JSON.stringify(key || null)};
+      const value = ${JSON.stringify(value || null)};
+
+      if (action === 'set') {
+        localStorage.setItem(key, value);
+        return JSON.stringify({ ok: true, key, size: value.length });
+      }
+      if (action === 'delete') {
+        localStorage.removeItem(key);
+        return JSON.stringify({ ok: true, key });
+      }
+      if (action === 'clear') {
+        const count = localStorage.length;
+        localStorage.clear();
+        return JSON.stringify({ ok: true, cleared: count });
+      }
+      if (action === 'get' && key) {
+        const val = localStorage.getItem(key);
+        return JSON.stringify({ key, value: val, exists: val !== null });
+      }
+      // list or get-all
+      const items = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        const v = localStorage.getItem(k);
+        items.push({ key: k, size: (v || '').length, preview: (v || '').slice(0, 80) });
+      }
+      return JSON.stringify({ count: items.length, items });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (data.ok) {
+      if (action === 'set') return textResult(`[localStorage] Set "${data.key}" (${data.size} chars)`);
+      if (action === 'delete') return textResult(`[localStorage] Deleted "${data.key}"`);
+      if (action === 'clear') return textResult(`[localStorage] Cleared ${data.cleared} items`);
+    }
+    if (data.exists !== undefined) {
+      return data.exists
+        ? textResult(`[localStorage] "${data.key}" = ${(data.value || '').slice(0, 200)}`)
+        : textResult(`[localStorage] "${data.key}" not found`);
+    }
+
+    // list
+    const lines = [`[localStorage] ${data.count} items`];
+    for (const item of data.items.slice(0, 20)) {
+      lines.push(`  ${item.key} (${item.size} chars): ${item.preview}`);
+    }
+    if (data.count > 20) lines.push(`  ... +${data.count - 20} more`);
     return textResult(lines.join('\n'));
   }
 

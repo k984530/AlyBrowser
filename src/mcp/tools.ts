@@ -563,6 +563,25 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Local Storage ─────────────────────────────────────────
+  {
+    name: 'browser_local_storage',
+    description:
+      'Read, write, or clear page localStorage. Actions: "get" (read key or all), "set" (write key/value), ' +
+      '"delete" (remove key), "clear" (remove all), "list" (show all keys with sizes). ' +
+      'Useful for debugging state, modifying app settings, and testing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['get', 'set', 'delete', 'clear', 'list'], description: 'Action (default: list)' },
+        key: { type: 'string', description: 'Key for get/set/delete' },
+        value: { type: 'string', description: 'Value for set' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Wait for Text ─────────────────────────────────────────
   {
     name: 'browser_wait_for_text',

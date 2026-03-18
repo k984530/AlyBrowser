@@ -443,6 +443,25 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_local_storage throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_local_storage', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_local_storage set requires key+value', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_local_storage', { action: 'set' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('"key" and "value" required');
+  });
+
+  it('browser_local_storage delete requires key', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_local_storage', { action: 'delete' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('"key" required');
+  });
+
   it('browser_wait_for_text requires text param', async () => {
     const mcp = create();
     await expect((mcp as any).handleTool('browser_wait_for_text', {})).rejects.toThrow('"text" must be a non-empty string');
