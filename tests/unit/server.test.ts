@@ -443,6 +443,20 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_session_clone requires targetSessionId', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_session_clone', {});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('"targetSessionId" is required');
+  });
+
+  it('browser_session_clone rejects missing source', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_session_clone', { targetSessionId: 'new' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('not found');
+  });
+
   it('browser_page_size throws without session', async () => {
     const mcp = create();
     await expect((mcp as any).handleTool('browser_page_size', {})).rejects.toThrow('No browser session');

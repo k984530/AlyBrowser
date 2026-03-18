@@ -563,6 +563,23 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Session Clone ─────────────────────────────────────────
+  {
+    name: 'browser_session_clone',
+    description:
+      'Clone an existing browser session to a new one. Copies cookies from the source session ' +
+      'to maintain login state. Useful for parallel work with same authentication.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sourceSessionId: { type: 'string', description: 'Session to clone from (default: "default")' },
+        targetSessionId: { type: 'string', description: 'New session name to create' },
+        url: { type: 'string', description: 'URL to navigate after cloning (optional)' },
+      },
+      required: ['targetSessionId'],
+    },
+  },
+
   // ── Page Weight ───────────────────────────────────────────
   {
     name: 'browser_page_size',

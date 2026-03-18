@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Session Clone
+      case 'browser_session_clone':
+        return this.handleSessionClone(args);
+
       // Page Weight
       case 'browser_page_size':
         return this.handlePageSize(args);
@@ -948,6 +952,60 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Session Clone ─────────────────────────────────────────
+
+  private async handleSessionClone(args: Record<string, unknown>): Promise<ToolResult> {
+    const sourceId = (args.sourceSessionId as string) || 'default';
+    const targetId = args.targetSessionId as string;
+    if (!targetId) return errorResult('"targetSessionId" is required');
+
+    const source = this.sessions.get(sourceId);
+    if (!source?.isConnected) {
+      return errorResult(`Source session "${sourceId}" not found or not connected`);
+    }
+
+    // Check target doesn't already exist
+    if (this.sessions.has(targetId)) {
+      return errorResult(`Target session "${targetId}" already exists`);
+    }
+
+    // Launch target session
+    const { ExtensionBridge } = await import('../extension/bridge');
+    const target = new ExtensionBridge(targetId);
+    try {
+      await target.launch({ url: args.url as string | undefined });
+    } catch (err) {
+      await target.close().catch(() => {});
+      throw err;
+    }
+    this.sessions.set(targetId, target);
+
+    // Copy cookies from source — get all cookies via evaluate
+    let copiedCount = 0;
+    try {
+      const cookiesRaw = await source.evaluate('JSON.stringify(document.cookie)');
+      const url = await source.evaluate('location.href');
+      if (typeof url === 'string') {
+        const allCookies = await source.cookieGet(url);
+        if (Array.isArray(allCookies)) {
+          for (const cookie of allCookies) {
+            try {
+              await target.cookieSet(cookie as Record<string, unknown>);
+              copiedCount++;
+            } catch {}
+          }
+        }
+      }
+    } catch {}
+
+    return textResult(
+      `[Session Clone] "${sourceId}" → "${targetId}"\n` +
+      `  Cookies copied: ${copiedCount}\n` +
+      `  Target port: ${target.port}\n` +
+      (args.url ? `  Navigated to: ${args.url}` : '  Ready for navigation'),
+    );
   }
 
   // ── Page Weight ───────────────────────────────────────────

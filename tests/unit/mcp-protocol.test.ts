@@ -82,7 +82,7 @@ describe('MCP Protocol (stdio)', () => {
     const responses = await collectResponses(proc, 1500);
     const list = responses.get(2);
     expect(list).toBeDefined();
-    expect(list.result.tools).toHaveLength(70);
+    expect(list.result.tools).toHaveLength(71);
 
     const names = list.result.tools.map((t: any) => t.name);
     expect(names).toContain('browser_launch');
