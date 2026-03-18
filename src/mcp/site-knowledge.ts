@@ -156,8 +156,13 @@ export class SiteKnowledge {
         const raw = fs.readFileSync(fp, 'utf-8');
         // Try decrypting first, fall back to plaintext JSON
         if (this.encryptionKey && !raw.startsWith('{')) {
-          const json = decrypt(raw, this.encryptionKey);
-          data = JSON.parse(json);
+          try {
+            const json = decrypt(raw, this.encryptionKey);
+            data = JSON.parse(json);
+          } catch {
+            // Decryption failed (key changed?) — try as plaintext
+            data = JSON.parse(raw);
+          }
         } else {
           data = JSON.parse(raw);
         }
