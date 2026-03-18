@@ -133,5 +133,39 @@ describe('JWT HS256 Token', () => {
       const decoded = verifyJwt(token, secret);
       expect(decoded).toEqual(original);
     });
+
+    it('accepts token without exp (non-expiring)', () => {
+      const token = signJwt(payload, secret);
+      const decoded = verifyJwt(token, secret);
+      expect(decoded.exp).toBeUndefined();
+    });
+
+    it('accepts token with future exp', () => {
+      const futurePayload: TokenPayload = {
+        ...payload,
+        exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour from now
+      };
+      const token = signJwt(futurePayload, secret);
+      const decoded = verifyJwt(token, secret);
+      expect(decoded.exp).toBe(futurePayload.exp);
+    });
+
+    it('throws on expired token', () => {
+      const expiredPayload: TokenPayload = {
+        ...payload,
+        exp: Math.floor(Date.now() / 1000) - 60, // 1 minute ago
+      };
+      const token = signJwt(expiredPayload, secret);
+      expect(() => verifyJwt(token, secret)).toThrow('Token expired');
+    });
+
+    it('throws on token expiring exactly now', () => {
+      const nowPayload: TokenPayload = {
+        ...payload,
+        exp: Math.floor(Date.now() / 1000), // exactly now
+      };
+      const token = signJwt(nowPayload, secret);
+      expect(() => verifyJwt(token, secret)).toThrow('Token expired');
+    });
   });
 });

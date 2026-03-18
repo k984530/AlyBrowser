@@ -28,6 +28,8 @@ export interface TokenPayload {
   iat: number;
   /** Unique token ID */
   jti: string;
+  /** Expiration time (epoch seconds). Optional — omit for non-expiring tokens. */
+  exp?: number;
 }
 
 // ── Public API ──────────────────────────────────────────────
@@ -67,6 +69,11 @@ export function verifyJwt(token: string, secret: string): TokenPayload {
   const payload = base64urlDecode(body) as TokenPayload;
   if (!payload.sub || !payload.iat || !payload.jti) {
     throw new Error('Invalid token payload: missing required fields');
+  }
+
+  // Validate expiration if present
+  if (payload.exp !== undefined && payload.exp <= Math.floor(Date.now() / 1000)) {
+    throw new Error('Token expired');
   }
 
   return payload;
