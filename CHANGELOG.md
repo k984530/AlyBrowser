@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- CI workflow: add build step before test (mcp-protocol tests require dist/)
+- publish.yml: reorder build before test
+
+### Changed
+- Export auth API (`generateSecret`, `signJwt`, `verifyJwt`, `TokenPayload`) from package root
+- Encrypted storage fallback: try plaintext on decryption failure
+- Remove unused `_lastUrls` field from bridge
+
+### Added
+- 331 tests (from 291): server handler error paths, auto-learn utilities
+- `eslint.config.js` flat config
+- `plugin.yaml` Aly ecosystem plugin definition
+- `.gitignore`: coverage, screenshots, pipeline artifacts
+
 ## [1.0.0] - 2026-03-18
 
 ### Security
