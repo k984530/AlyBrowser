@@ -563,6 +563,23 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Accessibility ──────────────────────────────────────────
+  {
+    name: 'browser_a11y_audit',
+    description:
+      'Run a lightweight WCAG accessibility audit on the current page. ' +
+      'Checks: missing alt text, empty links, missing form labels, heading hierarchy, ' +
+      'missing lang attribute, low contrast indicators, missing ARIA roles. ' +
+      'Returns issues grouped by severity (critical/warning/info).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Top Sites ──────────────────────────────────────────────
   {
     name: 'browser_top_sites',

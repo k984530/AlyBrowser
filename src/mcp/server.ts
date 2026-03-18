@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Accessibility
+      case 'browser_a11y_audit':
+        return this.handleA11yAudit(args);
+
       // Site Knowledge
       case 'browser_learn':
         return this.handleLearn(args);
@@ -877,6 +881,114 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Accessibility ──────────────────────────────────────────
+
+  private async handleA11yAudit(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const audit = await bridge.evaluate(`(() => {
+      const issues = [];
+      const add = (severity, rule, el, msg) => issues.push({severity, rule, tag: el?.tagName?.toLowerCase() || '', msg});
+
+      // 1. Images without alt
+      document.querySelectorAll('img').forEach(img => {
+        if (!img.hasAttribute('alt')) add('critical', 'img-alt', img, 'Image missing alt text: ' + (img.src || '').slice(0, 80));
+      });
+
+      // 2. Empty links
+      document.querySelectorAll('a').forEach(a => {
+        const text = (a.textContent || '').trim();
+        const ariaLabel = a.getAttribute('aria-label') || '';
+        const img = a.querySelector('img[alt]');
+        if (!text && !ariaLabel && !img) add('critical', 'link-name', a, 'Link has no accessible name: ' + (a.href || '').slice(0, 80));
+      });
+
+      // 3. Form inputs without labels
+      document.querySelectorAll('input, select, textarea').forEach(el => {
+        if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return;
+        const id = el.id;
+        const hasLabel = id && document.querySelector('label[for="' + id + '"]');
+        const ariaLabel = el.getAttribute('aria-label') || el.getAttribute('aria-labelledby');
+        const closestLabel = el.closest('label');
+        if (!hasLabel && !ariaLabel && !closestLabel) add('critical', 'label', el, 'Form input missing label: ' + (el.name || el.type));
+      });
+
+      // 4. Missing lang attribute
+      if (!document.documentElement.hasAttribute('lang')) {
+        add('warning', 'html-lang', document.documentElement, 'Missing lang attribute on <html>');
+      }
+
+      // 5. Heading hierarchy (skipped levels)
+      const headings = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(h => parseInt(h.tagName[1]));
+      for (let i = 1; i < headings.length; i++) {
+        if (headings[i] - headings[i-1] > 1) add('warning', 'heading-order', null, 'Heading level skipped: h' + headings[i-1] + ' → h' + headings[i]);
+      }
+
+      // 6. Missing h1
+      if (!document.querySelector('h1')) add('warning', 'page-has-h1', null, 'Page missing h1 heading');
+
+      // 7. Buttons without accessible name
+      document.querySelectorAll('button').forEach(btn => {
+        const text = (btn.textContent || '').trim();
+        const ariaLabel = btn.getAttribute('aria-label') || '';
+        if (!text && !ariaLabel) add('warning', 'button-name', btn, 'Button has no accessible name');
+      });
+
+      // 8. Auto-playing media
+      document.querySelectorAll('video[autoplay], audio[autoplay]').forEach(el => {
+        add('warning', 'no-autoplay', el, 'Auto-playing media detected');
+      });
+
+      // 9. Missing document title
+      if (!document.title.trim()) add('warning', 'document-title', null, 'Page has no title');
+
+      // 10. Tabindex > 0 (disrupts natural tab order)
+      document.querySelectorAll('[tabindex]').forEach(el => {
+        const ti = parseInt(el.getAttribute('tabindex') || '0');
+        if (ti > 0) add('info', 'tabindex', el, 'Positive tabindex (' + ti + ') disrupts tab order');
+      });
+
+      return JSON.stringify(issues);
+    })()`, tabId);
+
+    const issues = typeof audit === 'string' ? JSON.parse(audit) : audit;
+
+    if (!issues || issues.length === 0) {
+      return textResult('[Accessibility Audit] No issues found. Page passes basic WCAG checks.');
+    }
+
+    const critical = issues.filter((i: any) => i.severity === 'critical');
+    const warnings = issues.filter((i: any) => i.severity === 'warning');
+    const info = issues.filter((i: any) => i.severity === 'info');
+
+    const lines = [
+      `[Accessibility Audit] ${issues.length} issues found`,
+      `  Critical: ${critical.length}, Warning: ${warnings.length}, Info: ${info.length}`,
+    ];
+
+    if (critical.length > 0) {
+      lines.push('', '── Critical ──');
+      for (const i of critical.slice(0, 15)) {
+        lines.push(`  [${i.rule}] ${i.msg}`);
+      }
+    }
+    if (warnings.length > 0) {
+      lines.push('', '── Warning ──');
+      for (const i of warnings.slice(0, 10)) {
+        lines.push(`  [${i.rule}] ${i.msg}`);
+      }
+    }
+    if (info.length > 0) {
+      lines.push('', '── Info ──');
+      for (const i of info.slice(0, 5)) {
+        lines.push(`  [${i.rule}] ${i.msg}`);
+      }
+    }
 
     return textResult(lines.join('\n'));
   }
