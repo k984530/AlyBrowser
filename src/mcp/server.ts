@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Console
+      case 'browser_console_log':
+        return this.handleConsoleLog(args);
+
       // Network
       case 'browser_network_log':
         return this.handleNetworkLog(args);
@@ -891,6 +895,64 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Console ────────────────────────────────────────────────
+
+  private async handleConsoleLog(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const level = (args.level as string) || 'all';
+
+    const result = await bridge.evaluate(`(() => {
+      // Install interceptor if not already present
+      if (!window.__alyConsoleLog) {
+        window.__alyConsoleLog = [];
+        const maxEntries = 200;
+        ['log','warn','error','info'].forEach(method => {
+          const orig = console[method].bind(console);
+          console[method] = (...args) => {
+            if (window.__alyConsoleLog.length >= maxEntries) window.__alyConsoleLog.shift();
+            window.__alyConsoleLog.push({
+              level: method,
+              message: args.map(a => {
+                try { return typeof a === 'object' ? JSON.stringify(a) : String(a); }
+                catch { return String(a); }
+              }).join(' '),
+              ts: Date.now(),
+            });
+            orig(...args);
+          };
+        });
+        // Capture uncaught errors too
+        window.addEventListener('error', e => {
+          if (window.__alyConsoleLog.length >= maxEntries) window.__alyConsoleLog.shift();
+          window.__alyConsoleLog.push({ level: 'error', message: e.message + ' at ' + e.filename + ':' + e.lineno, ts: Date.now() });
+        });
+      }
+      const filter = ${JSON.stringify(level)};
+      const logs = filter === 'all'
+        ? [...window.__alyConsoleLog]
+        : window.__alyConsoleLog.filter(l => l.level === filter);
+      // Drain after read
+      window.__alyConsoleLog = [];
+      return JSON.stringify(logs);
+    })()`, tabId);
+
+    const logs = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (!logs || logs.length === 0) {
+      return textResult(`[Console] No messages${level !== 'all' ? ` (level: ${level})` : ''}. Interceptor installed — future messages will be captured.`);
+    }
+
+    const lines = [`[Console] ${logs.length} messages`];
+    for (const log of logs.slice(-50)) {
+      const msg = (log.message || '').slice(0, 200);
+      const tag = log.level === 'error' ? 'ERR' : log.level === 'warn' ? 'WRN' : log.level.toUpperCase();
+      lines.push(`  [${tag}] ${msg}`);
+    }
 
     return textResult(lines.join('\n'));
   }

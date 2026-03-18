@@ -563,6 +563,23 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Console ────────────────────────────────────────────────
+  {
+    name: 'browser_console_log',
+    description:
+      'Read recent console messages (log, warn, error, info) from the page. ' +
+      'Captures messages since last call or page load. Useful for debugging JavaScript errors, ' +
+      'monitoring API responses logged to console, and detecting runtime issues.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        level: { type: 'string', enum: ['all', 'error', 'warn', 'info', 'log'], description: 'Filter by log level (default: all)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Network ────────────────────────────────────────────────
   {
     name: 'browser_network_log',
