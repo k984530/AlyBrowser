@@ -209,6 +209,29 @@ describe('AlyBrowserMCPServer', () => {
     expect((mcp as any).tabKey('default', undefined)).toBe('default:0');
   });
 
+  it('requireString throws on non-string value', () => {
+    const mcp = create();
+    expect(() => (mcp as any).requireString({ ref: 123 }, 'ref')).toThrow('"ref" must be a non-empty string');
+    expect(() => (mcp as any).requireString({ ref: '' }, 'ref')).toThrow('"ref" must be a non-empty string');
+    expect(() => (mcp as any).requireString({}, 'ref')).toThrow('"ref" must be a non-empty string');
+  });
+
+  it('requireString returns string on valid value', () => {
+    const mcp = create();
+    expect((mcp as any).requireString({ ref: '@e0' }, 'ref')).toBe('@e0');
+  });
+
+  it('getSessionId defaults to "default"', () => {
+    const mcp = create();
+    expect((mcp as any).getSessionId({})).toBe('default');
+    expect((mcp as any).getSessionId({ sessionId: 'custom' })).toBe('custom');
+  });
+
+  it('ensureConnected throws when session not connected', () => {
+    const mcp = create();
+    expect(() => (mcp as any).ensureConnected({})).toThrow('No browser session');
+  });
+
   it('handleClose cleans up tab tracking for session', async () => {
     const mcp = create();
     // Simulate some tab tracking entries

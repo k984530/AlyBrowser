@@ -54,7 +54,6 @@ export class ExtensionBridge {
   private _recovering = false;
   private _recoverAttempts = 0;
   private _maxRecoverAttempts = 3;
-  private _lastUrls: string[] = [];
   private _intentionalClose = false;
 
   constructor(sessionId: string = 'default') {
