@@ -314,10 +314,11 @@ export const tools: ToolDefinition[] = [
   // ── Frame Management ────────────────────────────────────────
   {
     name: 'browser_frame_list',
-    description: 'List all frames (main + iframes) in the current tab. Returns frameId, parentFrameId, and URL for each frame. Use frameId to target specific iframes with snapshot/click/type/etc.',
+    description: 'List all frames (main + iframes) in the current tab. Returns frameId, parentFrameId, URL, and depth for each frame. Supports nested iframes up to configurable depth. Use frameId to target specific iframes with snapshot/click/type/etc.',
     inputSchema: {
       type: 'object',
       properties: {
+        depth: { type: 'number', description: 'Max nesting depth to return (default: 10). Use to limit results for deeply nested iframes.' },
         ...tabIdProp,
         ...sessionIdProp,
       },

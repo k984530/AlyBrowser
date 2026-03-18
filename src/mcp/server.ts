@@ -577,7 +577,27 @@ export class AlyBrowserMCPServer {
   private async handleFrameList(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
-    return jsonResult(await bridge.frameList(tabId));
+    const maxDepth = (args.depth as number) ?? 10;
+    const frames = (await bridge.frameList(tabId)) as Array<{ frameId: number; parentFrameId: number; url: string }>;
+
+    // Compute depth for each frame based on parent chain
+    const depthMap = new Map<number, number>();
+    depthMap.set(0, 0); // main frame
+    // Build parent lookup and compute depths
+    const parentMap = new Map<number, number>();
+    for (const f of frames) parentMap.set(f.frameId, f.parentFrameId);
+    function getDepth(frameId: number): number {
+      if (depthMap.has(frameId)) return depthMap.get(frameId)!;
+      const parentId = parentMap.get(frameId);
+      const d = parentId !== undefined ? getDepth(parentId) + 1 : 0;
+      depthMap.set(frameId, d);
+      return d;
+    }
+    const result = frames
+      .map((f) => ({ ...f, depth: getDepth(f.frameId) }))
+      .filter((f) => f.depth <= maxDepth);
+
+    return jsonResult(result);
   }
 
   // ── Tab Management ───────────────────────────────────────────
