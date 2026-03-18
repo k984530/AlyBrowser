@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Attribute Set
+      case 'browser_attribute_set':
+        return this.handleAttributeSet(args);
+
       // Highlight
       case 'browser_highlight':
         return this.handleHighlight(args);
@@ -1016,6 +1020,34 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Attribute Set ────────────────────────────────────────
+
+  private async handleAttributeSet(args: Record<string, unknown>): Promise<ToolResult> {
+    const selector = this.requireString(args, 'selector');
+    const attribute = this.requireString(args, 'attribute');
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const value = args.value as string | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const els = document.querySelectorAll(${JSON.stringify(selector)});
+      let count = 0;
+      els.forEach(el => {
+        if (${value !== undefined} ) {
+          el.setAttribute(${JSON.stringify(attribute)}, ${JSON.stringify(value ?? '')});
+        } else {
+          el.removeAttribute(${JSON.stringify(attribute)});
+        }
+        count++;
+      });
+      return JSON.stringify({ count, action: ${value !== undefined} ? 'set' : 'removed' });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const verb = data.action === 'set' ? `set "${attribute}"="${value}"` : `removed "${attribute}"`;
+    return textResult(`[Attribute] ${verb} on ${data.count} element(s) (${selector})`);
   }
 
   // ── Highlight ────────────────────────────────────────────

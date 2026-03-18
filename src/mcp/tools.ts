@@ -563,6 +563,25 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Attribute Set ────────────────────────────────────────
+  {
+    name: 'browser_attribute_set',
+    description:
+      'Set or remove HTML attributes on elements by CSS selector. Useful for enabling disabled buttons, ' +
+      'changing input values, toggling visibility, modifying data attributes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector of target element(s)' },
+        attribute: { type: 'string', description: 'Attribute name (e.g., "disabled", "href", "data-id")' },
+        value: { type: 'string', description: 'Value to set (omit to remove the attribute)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['selector', 'attribute'],
+    },
+  },
+
   // ── Highlight ────────────────────────────────────────────
   {
     name: 'browser_highlight',
