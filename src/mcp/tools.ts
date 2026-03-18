@@ -563,6 +563,21 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Social Preview ───────────────────────────────────────
+  {
+    name: 'browser_open_graph_preview',
+    description:
+      'Simulate how the page will appear when shared on social media. Shows Facebook, Twitter, ' +
+      'and LinkedIn card previews based on OG/meta tags. Reports missing tags for each platform.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Selector Generator ───────────────────────────────────
   {
     name: 'browser_selector_generator',

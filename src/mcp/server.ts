@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Social Preview
+      case 'browser_open_graph_preview':
+        return this.handleOpenGraphPreview(args);
+
       // Selector Generator
       case 'browser_selector_generator':
         return this.handleSelectorGenerator(args);
@@ -1107,6 +1111,57 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Social Preview ───────────────────────────────────────
+
+  private async handleOpenGraphPreview(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const g = (n) => (document.querySelector('meta[property="' + n + '"], meta[name="' + n + '"]') || {}).content || '';
+
+      const fb = { title: g('og:title') || document.title, desc: g('og:description') || g('description'), image: g('og:image'), url: g('og:url') || location.href, type: g('og:type') };
+      const tw = { card: g('twitter:card') || 'summary', title: g('twitter:title') || fb.title, desc: g('twitter:description') || fb.desc, image: g('twitter:image') || fb.image };
+      const li = { title: fb.title, desc: fb.desc, image: fb.image };
+
+      const fbMissing = [];
+      if (!g('og:title')) fbMissing.push('og:title');
+      if (!g('og:description')) fbMissing.push('og:description');
+      if (!g('og:image')) fbMissing.push('og:image');
+      if (!g('og:url')) fbMissing.push('og:url');
+
+      const twMissing = [];
+      if (!g('twitter:card')) twMissing.push('twitter:card');
+      if (!g('twitter:title') && !g('og:title')) twMissing.push('twitter:title');
+      if (!g('twitter:image') && !g('og:image')) twMissing.push('twitter:image');
+
+      return JSON.stringify({ fb, tw, li, fbMissing, twMissing });
+    })()`, tabId);
+
+    const d = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = [
+      '── Facebook ──',
+      `  Title: ${d.fb.title || '(missing)'}`,
+      `  Desc: ${(d.fb.desc || '(missing)').slice(0, 80)}`,
+      `  Image: ${d.fb.image || '(missing)'}`,
+      `  Type: ${d.fb.type || '(missing)'}`,
+      d.fbMissing.length ? `  Missing: ${d.fbMissing.join(', ')}` : '  All tags present',
+      '',
+      '── Twitter ──',
+      `  Card: ${d.tw.card}`,
+      `  Title: ${d.tw.title || '(missing)'}`,
+      `  Desc: ${(d.tw.desc || '(missing)').slice(0, 80)}`,
+      `  Image: ${d.tw.image || '(missing)'}`,
+      d.twMissing.length ? `  Missing: ${d.twMissing.join(', ')}` : '  All tags present',
+      '',
+      '── LinkedIn ──',
+      `  Title: ${d.li.title || '(missing)'}`,
+      `  Desc: ${(d.li.desc || '(missing)').slice(0, 80)}`,
+      `  Image: ${d.li.image || '(missing)'}`,
+    ];
+    return textResult(`[Social Preview]\n${lines.join('\n')}`);
   }
 
   // ── Selector Generator ───────────────────────────────────
