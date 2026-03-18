@@ -563,6 +563,22 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── SEO ────────────────────────────────────────────────────
+  {
+    name: 'browser_meta_seo',
+    description:
+      'Analyze page SEO metadata: title, description, canonical URL, Open Graph tags, ' +
+      'Twitter Card tags, structured data (JSON-LD), robots meta, and heading structure. ' +
+      'Returns a comprehensive SEO audit report.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Console ────────────────────────────────────────────────
   {
     name: 'browser_console_log',

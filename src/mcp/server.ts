@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // SEO
+      case 'browser_meta_seo':
+        return this.handleMetaSeo(args);
+
       // Console
       case 'browser_console_log':
         return this.handleConsoleLog(args);
@@ -895,6 +899,104 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── SEO ────────────────────────────────────────────────────
+
+  private async handleMetaSeo(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const getMeta = (name) => {
+        const el = document.querySelector('meta[name="' + name + '"], meta[property="' + name + '"]');
+        return el ? el.getAttribute('content') : null;
+      };
+      const headings = {};
+      document.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(h => {
+        const tag = h.tagName.toLowerCase();
+        if (!headings[tag]) headings[tag] = [];
+        headings[tag].push(h.textContent.trim().slice(0, 80));
+      });
+      const jsonLd = [...document.querySelectorAll('script[type="application/ld+json"]')]
+        .map(s => { try { return JSON.parse(s.textContent); } catch { return null; } })
+        .filter(Boolean);
+      return JSON.stringify({
+        title: document.title,
+        titleLength: document.title.length,
+        description: getMeta('description'),
+        descriptionLength: (getMeta('description') || '').length,
+        canonical: document.querySelector('link[rel="canonical"]')?.getAttribute('href') || null,
+        robots: getMeta('robots'),
+        lang: document.documentElement.getAttribute('lang'),
+        og: {
+          title: getMeta('og:title'),
+          description: getMeta('og:description'),
+          image: getMeta('og:image'),
+          url: getMeta('og:url'),
+          type: getMeta('og:type'),
+        },
+        twitter: {
+          card: getMeta('twitter:card'),
+          title: getMeta('twitter:title'),
+          description: getMeta('twitter:description'),
+          image: getMeta('twitter:image'),
+        },
+        headings,
+        jsonLd: jsonLd.length > 0 ? jsonLd : null,
+        issues: [],
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const issues: string[] = [];
+
+    // Check for common SEO issues
+    if (!data.title) issues.push('Missing page title');
+    else if (data.titleLength > 60) issues.push(`Title too long (${data.titleLength} chars, recommended ≤60)`);
+    if (!data.description) issues.push('Missing meta description');
+    else if (data.descriptionLength > 160) issues.push(`Description too long (${data.descriptionLength} chars, recommended ≤160)`);
+    if (!data.canonical) issues.push('Missing canonical URL');
+    if (!data.lang) issues.push('Missing lang attribute on <html>');
+    if (!data.og.title) issues.push('Missing Open Graph title');
+    if (!data.og.image) issues.push('Missing Open Graph image');
+    if (!data.headings.h1 || data.headings.h1.length === 0) issues.push('Missing H1 heading');
+    if (data.headings.h1 && data.headings.h1.length > 1) issues.push(`Multiple H1 headings (${data.headings.h1.length})`);
+
+    const lines = [
+      `[SEO Audit] ${data.title || '(no title)'}`,
+      '',
+      '── Meta ──',
+      `  Title: ${data.title || '(missing)'} (${data.titleLength} chars)`,
+      `  Description: ${(data.description || '(missing)').slice(0, 100)}${data.descriptionLength > 100 ? '...' : ''} (${data.descriptionLength} chars)`,
+      `  Canonical: ${data.canonical || '(missing)'}`,
+      `  Robots: ${data.robots || '(default)'}`,
+      `  Lang: ${data.lang || '(missing)'}`,
+      '',
+      '── Open Graph ──',
+      `  og:title: ${data.og.title || '(missing)'}`,
+      `  og:description: ${(data.og.description || '(missing)').slice(0, 80)}`,
+      `  og:image: ${data.og.image || '(missing)'}`,
+      `  og:type: ${data.og.type || '(missing)'}`,
+      '',
+      '── Headings ──',
+    ];
+    for (const [tag, texts] of Object.entries(data.headings) as [string, string[]][]) {
+      for (const t of texts.slice(0, 5)) {
+        lines.push(`  ${tag}: ${t}`);
+      }
+    }
+    if (data.jsonLd) {
+      lines.push('', `── Structured Data ── (${data.jsonLd.length} JSON-LD block(s))`);
+    }
+    if (issues.length > 0) {
+      lines.push('', `── Issues (${issues.length}) ──`);
+      for (const i of issues) lines.push(`  ⚠ ${i}`);
+    } else {
+      lines.push('', '── No major SEO issues found ──');
+    }
 
     return textResult(lines.join('\n'));
   }
