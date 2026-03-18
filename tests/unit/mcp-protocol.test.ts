@@ -58,7 +58,7 @@ describe('MCP Protocol (stdio)', () => {
     const init = responses.get(1);
     expect(init).toBeDefined();
     expect(init.result.serverInfo.name).toBe('aly-browser');
-    expect(init.result.serverInfo.version).toBe('1.6.0');
+    expect(init.result.serverInfo.version).toBe('2.0.0');
     expect(init.result.capabilities.tools).toBeDefined();
     expect(init.result.instructions).toBeTruthy();
   });

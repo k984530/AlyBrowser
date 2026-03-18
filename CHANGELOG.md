@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.0.0] - 2026-03-18
+
+### Highlights
+- **75 MCP tools** (from 49 in v1.0.0)
+- **486 tests** (from 229 at session start)
+- **26 new tools** added via autonomous planning in one day
+- 7 npm releases (v1.0.0 → v2.0.0)
+
+### Added (since v1.5.0)
+- **`browser_style_override`**: Inject/remove/list CSS overrides
+- **`browser_local_storage`**: Full localStorage CRUD (get/set/delete/clear/list)
+- **`browser_wait_for_text`**: Wait for text to appear/disappear on page
+- **`browser_session_clone`**: Clone session with cookie transfer
+- **`browser_page_audit`**: Unified quality report (0-100 score, A-F grade)
+- **`ActionRecorder`**: Browser action recording/replay module
+
+### Infrastructure
+- AI framework integration guide (LangChain, CrewAI, Claude Code)
+- Visual regression testing foundation (PageWatcher + snapshot-diff + screenshot-compare)
+- AutoLoginManager with SSO chain resolution
+- Korean PII detection (5 types)
+- Linux screen tools (xdotool/import/gnome-screenshot)
+- Cross-platform CI fixes
+
 ## [1.5.0] - 2026-03-18
 
 ### Added
