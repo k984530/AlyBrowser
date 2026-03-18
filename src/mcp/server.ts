@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Count Elements
+      case 'browser_count_elements':
+        return this.handleCountElements(args);
+
       // Drag and Drop
       case 'browser_drag_drop':
         return this.handleDragDrop(args);
@@ -999,6 +1003,32 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Count Elements ───────────────────────────────────────
+
+  private async handleCountElements(args: Record<string, unknown>): Promise<ToolResult> {
+    const selectors = args.selectors as string[];
+    if (!Array.isArray(selectors) || selectors.length === 0) {
+      return errorResult('"selectors" must be a non-empty array of CSS selectors');
+    }
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const selectors = ${JSON.stringify(selectors)};
+      return JSON.stringify(selectors.map(s => {
+        try { return { selector: s, count: document.querySelectorAll(s).length }; }
+        catch { return { selector: s, count: 0, error: 'Invalid selector' }; }
+      }));
+    })()`, tabId);
+
+    const counts = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = ['[Element Count]'];
+    for (const c of counts) {
+      lines.push(`  ${c.selector}: ${c.count}${c.error ? ' (invalid)' : ''}`);
+    }
     return textResult(lines.join('\n'));
   }
 

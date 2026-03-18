@@ -563,6 +563,27 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Count Elements ───────────────────────────────────────
+  {
+    name: 'browser_count_elements',
+    description:
+      'Count elements matching one or more CSS selectors. Returns count per selector. ' +
+      'Useful for verifying page state: "are there 5 items in the cart?", "how many errors?", etc.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selectors: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Array of CSS selectors to count (e.g., [".product", ".error", "input:checked"])',
+        },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['selectors'],
+    },
+  },
+
   // ── Drag and Drop ────────────────────────────────────────
   {
     name: 'browser_drag_drop',
