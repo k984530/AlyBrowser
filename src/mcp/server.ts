@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Page Print
+      case 'browser_page_to_pdf_data':
+        return this.handlePageToPdfData(args);
+
       // Scroll to Element
       case 'browser_scroll_to_element':
         return this.handleScrollToElement(args);
@@ -1007,6 +1011,58 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Page Print ───────────────────────────────────────────
+
+  private async handlePageToPdfData(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      // Try to find main content area
+      const main = document.querySelector('main, article, [role="main"], .content, .post, .entry') || document.body;
+      const skipTags = new Set(['script','style','nav','header','footer','aside','noscript','iframe','svg']);
+
+      const extractText = (el, depth) => {
+        if (depth > 20) return '';
+        const tag = el.tagName?.toLowerCase();
+        if (!tag || skipTags.has(tag)) return '';
+        if (el.offsetParent === null && tag !== 'body') return '';
+
+        let text = '';
+        if (['h1','h2','h3','h4','h5','h6'].includes(tag)) {
+          text += '\\n' + '#'.repeat(parseInt(tag[1])) + ' ' + el.textContent.trim() + '\\n';
+        } else if (tag === 'p') {
+          const t = el.textContent.trim();
+          if (t) text += t + '\\n\\n';
+        } else if (tag === 'li') {
+          text += '• ' + el.textContent.trim() + '\\n';
+        } else if (tag === 'blockquote') {
+          text += '> ' + el.textContent.trim() + '\\n\\n';
+        } else if (tag === 'pre' || tag === 'code') {
+          text += '\\n\`\`\`\\n' + el.textContent.trim() + '\\n\`\`\`\\n';
+        } else {
+          for (const child of el.children) text += extractText(child, depth + 1);
+        }
+        return text;
+      };
+
+      const content = extractText(main, 0).trim();
+      const wordCount = content.split(/\\s+/).filter(Boolean).length;
+      return JSON.stringify({ title: document.title, url: location.href, wordCount, content: content.slice(0, 10000) });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = [
+      `# ${data.title}`,
+      `> Source: ${data.url}`,
+      `> Words: ${data.wordCount}`,
+      '',
+      data.content,
+    ];
+    if (data.wordCount > 2000) lines.push('\n... (truncated at 10,000 chars)');
     return textResult(lines.join('\n'));
   }
 

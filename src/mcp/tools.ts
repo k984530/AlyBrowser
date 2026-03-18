@@ -563,6 +563,21 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Page Print ───────────────────────────────────────────
+  {
+    name: 'browser_page_to_pdf_data',
+    description:
+      'Get page content as clean, printable text. Strips navigation, ads, and non-content elements. ' +
+      'Returns title + main content text. Useful for saving articles, generating summaries.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Scroll to Element ────────────────────────────────────
   {
     name: 'browser_scroll_to_element',
