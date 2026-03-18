@@ -563,6 +563,24 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Find Text ─────────────────────────────────────────────
+  {
+    name: 'browser_find_text',
+    description:
+      'Search for text on the page and return all occurrences with context. ' +
+      'Reports match count, surrounding text, and parent element. Case-insensitive. ' +
+      'More powerful than Ctrl+F — returns structured results for AI processing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Text to search for' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['query'],
+    },
+  },
+
   // ── Font List ─────────────────────────────────────────────
   {
     name: 'browser_font_list',

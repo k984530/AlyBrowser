@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Find Text
+      case 'browser_find_text':
+        return this.handleFindText(args);
+
       // Font List
       case 'browser_font_list':
         return this.handleFontList(args);
@@ -979,6 +983,52 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Find Text ─────────────────────────────────────────────
+
+  private async handleFindText(args: Record<string, unknown>): Promise<ToolResult> {
+    const query = this.requireString(args, 'query');
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const query = ${JSON.stringify(query)}.toLowerCase();
+      const matches = [];
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      let node;
+      while (node = walker.nextNode()) {
+        const text = node.textContent || '';
+        const lower = text.toLowerCase();
+        let idx = lower.indexOf(query);
+        while (idx !== -1 && matches.length < 50) {
+          const start = Math.max(0, idx - 30);
+          const end = Math.min(text.length, idx + query.length + 30);
+          const context = text.slice(start, end).trim();
+          const parent = node.parentElement;
+          matches.push({
+            context,
+            tag: parent ? parent.tagName.toLowerCase() : '',
+            id: parent?.id || null,
+          });
+          idx = lower.indexOf(query, idx + 1);
+        }
+        if (matches.length >= 50) break;
+      }
+      return JSON.stringify({ query: ${JSON.stringify(query)}, count: matches.length, matches });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (data.count === 0) return textResult(`[Find] "${data.query}" — 0 matches`);
+
+    const lines = [`[Find] "${data.query}" — ${data.count} match(es)`];
+    for (const m of data.matches.slice(0, 20)) {
+      const loc = m.id ? `<${m.tag}#${m.id}>` : `<${m.tag}>`;
+      lines.push(`  ${loc} ...${m.context}...`);
+    }
+    if (data.count > 20) lines.push(`  ... +${data.count - 20} more`);
     return textResult(lines.join('\n'));
   }
 
