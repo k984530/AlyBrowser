@@ -1,5 +1,102 @@
 # Changelog
 
+## [3.0.1] - 2026-03-18
+
+### Added
+- **`browser_permissions_check`**: Query browser permission states (geolocation, camera, mic, clipboard, notifications)
+- README.md updated: 49 → 124 tools across 29 categories
+- Tool integrity tests: tools↔handler sync verification via source parsing
+- MCP E2E protocol tests: unknown tool, parallel calls, schema validation, sequential lifecycle
+- 124 MCP tools, 562 tests
+
+## [3.0.0] - 2026-03-18
+
+### Highlights
+- **123 MCP tools** (major version bump from v2.x)
+- IndexedDB + Service Worker + Resource Hints inspection tools
+- PWA debugging capabilities
+
+### Added
+- **`browser_indexeddb_list`**: List IndexedDB databases and object stores
+- **`browser_service_worker_info`**: Service Worker status (active/installing/waiting, scope, caches)
+- **`browser_resource_hints`**: Analyze preload/prefetch/preconnect hints
+
+## [2.9.0] - 2026-03-18
+
+### Added
+- **`browser_service_worker_info`**: PWA service worker status analysis
+- **`browser_resource_hints`**: Resource hint analysis and recommendations
+- 122 MCP tools
+
+## [2.8.0] - 2026-03-18
+
+### Added
+- **`browser_xpath_query`**: XPath expression queries for complex element selection
+- **`browser_media_list`**: Video/audio/embed element inventory with metadata
+- **`browser_open_graph_preview`**: Social media card simulation (Facebook, Twitter, LinkedIn)
+- **`browser_selector_generator`**: Auto-generate stable CSS/XPath selectors
+- 120 MCP tools milestone
+
+## [2.7.0] - 2026-03-18
+
+### Added
+- **`browser_broken_links`**: Detect empty, javascript:, and invalid hrefs
+- **`browser_mixed_content_check`**: Detect HTTP resources on HTTPS pages
+- **`browser_js_coverage`**: JS usage analysis with blocking/3P detection
+- 116 MCP tools
+
+## [2.6.0] - 2026-03-18
+
+### Added
+- **`browser_web_vitals`**: Core Web Vitals (LCP/FCP/CLS/TTFB) measurement
+- **`browser_css_coverage`**: Detect unused CSS rules
+- **`browser_element_remove`**: Delete elements by CSS selector
+- 113 MCP tools
+
+## [2.5.0] - 2026-03-18
+
+### Added
+- **`browser_network_throttle`**: Simulate slow network (3G/4G/slow/offline presets)
+- **`browser_device_emulate`**: Full device profile emulation (iPhone/Pixel/iPad presets)
+- **`browser_timezone_set`**: IANA timezone spoofing via Intl.DateTimeFormat
+- **`browser_user_agent_set`**: UA spoofing with device presets
+- **`browser_geolocation_mock`**: Location spoofing with city presets
+- 110 MCP tools
+
+## [2.4.0] - 2026-03-18
+
+### Added
+- **`browser_shadow_dom_pierce`**: Traverse open shadow roots with `>>>` syntax
+- **`browser_infinite_scroll`**: Auto-load infinite scroll content
+- **`browser_print_preview`**: Print layout analysis (page count, paper size)
+- **`browser_event_listener_list`**: Interactive element event analysis
+- 105 MCP tools
+
+## [2.3.0] - 2026-03-18
+
+### Added
+- **`browser_json_extract`**: Structured data extraction (JSON-LD, OG, meta tags)
+- **WorkflowRunner**: Validate, plan, and estimate recorded action workflows
+- 101 MCP tools, 527 tests
+
+## [2.2.0] - 2026-03-18
+
+### Highlights
+- **100 MCP tools milestone**
+- 10 utility tools for common operations
+- 515 tests
+
+### Added
+- **`browser_drag_drop`**: HTML5 drag and drop simulation
+- **`browser_count_elements`**: Multi-selector element counting
+- **`browser_scroll_to_element`**: Smooth scroll to CSS selector target
+- **`browser_page_to_pdf_data`**: Clean article text extraction
+- **`browser_highlight`**: Visual element highlighting with colored outline
+- **`browser_attribute_set`**: Set/remove HTML attributes
+- **`browser_double_click`**: Double-click by ref
+- **`browser_right_click`**: Context menu click by CSS selector
+- 10 utility tools: `scroll_to_bottom`, `scroll_to_top`, `get_url`, `get_title`, `focus`, `blur`, `press_key`, `reload`, `page_info`, `element_count`
+
 ## [2.1.0] - 2026-03-18
 
 ### Added
