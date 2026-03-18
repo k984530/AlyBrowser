@@ -563,6 +563,24 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Highlight ────────────────────────────────────────────
+  {
+    name: 'browser_highlight',
+    description:
+      'Highlight elements on the page with a colored border/overlay. Useful for visual debugging, ' +
+      'pointing out elements to users, or marking test targets. Action: "add" or "clear".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector to highlight' },
+        action: { type: 'string', enum: ['add', 'clear'], description: 'add (default) or clear all highlights' },
+        color: { type: 'string', description: 'Highlight color (default: "red")' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Page Print ───────────────────────────────────────────
   {
     name: 'browser_page_to_pdf_data',

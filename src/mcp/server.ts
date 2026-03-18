@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Highlight
+      case 'browser_highlight':
+        return this.handleHighlight(args);
+
       // Page Print
       case 'browser_page_to_pdf_data':
         return this.handlePageToPdfData(args);
@@ -1012,6 +1016,41 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Highlight ────────────────────────────────────────────
+
+  private async handleHighlight(args: Record<string, unknown>): Promise<ToolResult> {
+    const action = (args.action as string) || 'add';
+    if (action !== 'clear' && !args.selector) return errorResult('"selector" is required for add action');
+
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    if (action === 'clear') {
+      await bridge.evaluate(`document.querySelectorAll('[data-aly-highlight]').forEach(el => { el.style.outline = el.dataset.alyOrigOutline || ''; delete el.dataset.alyHighlight; delete el.dataset.alyOrigOutline; })`, tabId);
+      return textResult('[Highlight] All highlights cleared.');
+    }
+
+    const selector = args.selector as string;
+    const color = (args.color as string) || 'red';
+
+    const result = await bridge.evaluate(`(() => {
+      const els = document.querySelectorAll(${JSON.stringify(selector)});
+      let count = 0;
+      els.forEach(el => {
+        if (!el.dataset.alyHighlight) {
+          el.dataset.alyOrigOutline = el.style.outline;
+        }
+        el.style.outline = '3px solid ${color}';
+        el.dataset.alyHighlight = 'true';
+        count++;
+      });
+      return JSON.stringify({ count, selector: ${JSON.stringify(selector)}, color: ${JSON.stringify(color)} });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    return textResult(`[Highlight] ${data.count} element(s) highlighted with ${data.color} (${data.selector})`);
   }
 
   // ── Page Print ───────────────────────────────────────────
