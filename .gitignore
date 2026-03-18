@@ -3,3 +3,9 @@ dist/
 /chrome/
 *.tsbuildinfo
 .DS_Store
+coverage/
+*.png
+*.tgz
+.pipeline/
+.claude/
+.mcp.json
