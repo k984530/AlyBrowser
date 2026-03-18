@@ -563,6 +563,23 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Selector Generator ───────────────────────────────────
+  {
+    name: 'browser_selector_generator',
+    description:
+      'Generate stable CSS/XPath selectors for elements. Given a description or partial selector, ' +
+      'finds the best unique selector. Useful for test automation and scraping script generation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'Visible text to find the element by' },
+        selector: { type: 'string', description: 'Partial CSS selector to refine' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Broken Links ─────────────────────────────────────────
   {
     name: 'browser_broken_links',

@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Selector Generator
+      case 'browser_selector_generator':
+        return this.handleSelectorGenerator(args);
+
       // Broken Links
       case 'browser_broken_links':
         return this.handleBrokenLinks(args);
@@ -1102,6 +1106,76 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Selector Generator ───────────────────────────────────
+
+  private async handleSelectorGenerator(args: Record<string, unknown>): Promise<ToolResult> {
+    const text = args.text as string | undefined;
+    const selector = args.selector as string | undefined;
+    if (!text && !selector) return errorResult('Provide "text" or "selector"');
+
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const text = ${JSON.stringify(text || null)};
+      const sel = ${JSON.stringify(selector || null)};
+
+      const genSelector = (el) => {
+        if (el.id) return '#' + el.id;
+        const tag = el.tagName.toLowerCase();
+        const cls = [...el.classList].filter(c => c.length < 30 && !c.match(/^[a-z]{20,}/)).slice(0, 2);
+        if (cls.length) {
+          const s = tag + '.' + cls.join('.');
+          if (document.querySelectorAll(s).length === 1) return s;
+        }
+        // nth-child fallback
+        const parent = el.parentElement;
+        if (parent) {
+          const siblings = [...parent.children].filter(c => c.tagName === el.tagName);
+          if (siblings.length === 1) return genSelector(parent) + ' > ' + tag;
+          const idx = siblings.indexOf(el) + 1;
+          return genSelector(parent) + ' > ' + tag + ':nth-child(' + idx + ')';
+        }
+        return tag;
+      };
+
+      let el = null;
+      if (sel) {
+        el = document.querySelector(sel);
+      } else if (text) {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        let node;
+        while (node = walker.nextNode()) {
+          if ((node.textContent || '').trim().includes(text)) { el = node.parentElement; break; }
+        }
+      }
+
+      if (!el) return JSON.stringify({ error: 'Element not found' });
+
+      const css = genSelector(el);
+      const unique = document.querySelectorAll(css).length === 1;
+
+      return JSON.stringify({
+        css,
+        unique,
+        tag: el.tagName.toLowerCase(),
+        id: el.id || null,
+        text: (el.textContent || '').trim().slice(0, 60),
+        matchCount: document.querySelectorAll(css).length,
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    if (data.error) return errorResult(data.error);
+
+    const lines = [
+      `[Selector] ${data.css}`,
+      `  Unique: ${data.unique} (${data.matchCount} match${data.matchCount > 1 ? 'es' : ''})`,
+      `  Element: <${data.tag}${data.id ? '#' + data.id : ''}> "${data.text}"`,
+    ];
     return textResult(lines.join('\n'));
   }
 
