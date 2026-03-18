@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.0] - 2026-03-18
+
+### Added
+- **`browser_viewport_test`**: Responsive design testing with device presets + overflow detection
+- **`browser_dark_mode`**: Dark/light mode detection and emulation
+- **`browser_scroll_map`**: Page content density analysis by scroll position
+- **`browser_dom_observe`**: Real-time DOM mutation monitoring (MutationObserver)
+- **`browser_captcha_detect`**: CAPTCHA/bot protection detection (7 systems)
+- **`browser_cookie_export/import`**: Session transfer via cookie profiles
+- **`browser_page_size`**: Page weight analysis with heaviest resources
+- **`browser_text_content`**: Structured page text extraction in Markdown
+- **`browser_image_list`**: Image audit with broken/alt detection
+- 70 MCP tools, 461 tests
+
 ## [1.4.0] - 2026-03-18
 
 ### Added
