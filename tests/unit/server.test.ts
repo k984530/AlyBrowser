@@ -443,6 +443,11 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_scroll_to_element requires selector', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_scroll_to_element', {})).rejects.toThrow('"selector" must be a non-empty string');
+  });
+
   it('browser_count_elements requires selectors array', async () => {
     const mcp = create();
     const result = await (mcp as any).handleTool('browser_count_elements', {});

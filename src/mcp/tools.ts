@@ -563,6 +563,24 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Scroll to Element ────────────────────────────────────
+  {
+    name: 'browser_scroll_to_element',
+    description:
+      'Scroll to a specific element by CSS selector. Uses scrollIntoView with smooth behavior. ' +
+      'Reports element position after scroll. Useful for reaching elements below the fold.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector of target element' },
+        block: { type: 'string', enum: ['start', 'center', 'end', 'nearest'], description: 'Vertical alignment (default: center)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['selector'],
+    },
+  },
+
   // ── Count Elements ───────────────────────────────────────
   {
     name: 'browser_count_elements',

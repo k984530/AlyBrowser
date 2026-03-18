@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Scroll to Element
+      case 'browser_scroll_to_element':
+        return this.handleScrollToElement(args);
+
       // Count Elements
       case 'browser_count_elements':
         return this.handleCountElements(args);
@@ -1004,6 +1008,33 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Scroll to Element ────────────────────────────────────
+
+  private async handleScrollToElement(args: Record<string, unknown>): Promise<ToolResult> {
+    const selector = this.requireString(args, 'selector');
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const block = (args.block as string) || 'center';
+
+    const result = await bridge.evaluate(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return JSON.stringify({ error: 'Element not found: ' + ${JSON.stringify(selector)} });
+      el.scrollIntoView({ behavior: 'smooth', block: ${JSON.stringify(block)} });
+      const rect = el.getBoundingClientRect();
+      return JSON.stringify({
+        tag: el.tagName.toLowerCase(),
+        id: el.id || null,
+        text: (el.textContent || '').trim().slice(0, 60),
+        y: Math.round(rect.top + window.scrollY),
+        visible: rect.top >= 0 && rect.bottom <= window.innerHeight,
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    if (data.error) return errorResult(data.error);
+    return textResult(`[Scroll] → <${data.tag}${data.id ? '#' + data.id : ''}> at y:${data.y} "${data.text}" (visible: ${data.visible})`);
   }
 
   // ── Count Elements ───────────────────────────────────────
