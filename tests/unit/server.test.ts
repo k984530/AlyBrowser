@@ -141,6 +141,74 @@ describe('AlyBrowserMCPServer', () => {
     (mcp as any).launching.delete('session-a');
   });
 
+  it('handleLearn records and returns success', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleLearn({
+      url: 'https://example.com/page',
+      action: 'click login',
+      result: 'success',
+      note: 'button found at top right',
+    });
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0].text).toContain('Recorded');
+    expect(result.content[0].text).toContain('success');
+  });
+
+  it('handleGetKnowledge returns entries after learn', async () => {
+    const mcp = create();
+    await (mcp as any).handleLearn({
+      url: 'https://test-gk.com/page',
+      action: 'type',
+      result: 'fail',
+      note: 'input not found',
+    });
+    const result = await (mcp as any).handleGetKnowledge({ url: 'https://test-gk.com/page' });
+    expect(result.content[0].text).toContain('fail');
+    expect(result.content[0].text).toContain('input not found');
+  });
+
+  it('handleGetKnowledge returns empty message for unknown site', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleGetKnowledge({ url: 'https://unknown-site-xyz.com' });
+    expect(result.content[0].text).toContain('No knowledge');
+  });
+
+  it('knowledgeKey groups by domain and first path segment', () => {
+    const mcp = create();
+    expect((mcp as any).knowledgeKey('https://example.com/settings/profile')).toBe('example.com:/settings');
+    expect((mcp as any).knowledgeKey('https://www.example.com/')).toBe('example.com:/');
+    expect((mcp as any).knowledgeKey('https://app.test.io/dashboard/analytics')).toBe('app.test.io:/dashboard');
+  });
+
+  it('getDomain strips www prefix', () => {
+    const mcp = create();
+    expect((mcp as any).getDomain('https://www.example.com/page')).toBe('example.com');
+    expect((mcp as any).getDomain('https://app.test.io')).toBe('app.test.io');
+  });
+
+  it('summarizeArgs truncates long values', () => {
+    const mcp = create();
+    const long = 'a'.repeat(100);
+    const result = (mcp as any).summarizeArgs('browser_type', { ref: '@e0', text: long });
+    expect(result).toContain('ref=@e0');
+    expect(result).toContain('...');
+    expect(result.length).toBeLessThan(200);
+  });
+
+  it('summarizeArgs excludes tabId and sessionId', () => {
+    const mcp = create();
+    const result = (mcp as any).summarizeArgs('browser_click', { ref: '@e1', tabId: 5, sessionId: 'x' });
+    expect(result).toContain('ref=@e1');
+    expect(result).not.toContain('tabId');
+    expect(result).not.toContain('sessionId');
+  });
+
+  it('tabKey combines session and tab', () => {
+    const mcp = create();
+    expect((mcp as any).tabKey('mySession', 42)).toBe('mySession:42');
+    expect((mcp as any).tabKey('default', undefined)).toBe('default:0');
+  });
+
   it('handleClose cleans up tab tracking for session', async () => {
     const mcp = create();
     // Simulate some tab tracking entries
