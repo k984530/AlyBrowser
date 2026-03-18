@@ -256,35 +256,53 @@ describe('screen', () => {
 
       expect(mockedExecSync).toHaveBeenCalledTimes(1);
       const cmd = mockedExecSync.mock.calls[0][0] as string;
-      expect(cmd).toContain('CGEventCreateScrollWheelEvent');
-      expect(cmd).toContain(', 5)');
+      if (process.platform === 'linux') {
+        expect(cmd).toContain('xdotool click');
+        expect(cmd).toContain('5'); // button 5 = scroll down
+      } else {
+        expect(cmd).toContain('CGEventCreateScrollWheelEvent');
+        expect(cmd).toContain(', 5)');
+      }
     });
 
     it('scrolls up with negative deltaY', () => {
       screen.scroll(-3);
 
       const cmd = mockedExecSync.mock.calls[0][0] as string;
-      expect(cmd).toContain(', -3)');
+      if (process.platform === 'linux') {
+        expect(cmd).toContain('4'); // button 4 = scroll up
+      } else {
+        expect(cmd).toContain(', -3)');
+      }
     });
 
     it('rounds fractional deltaY', () => {
       screen.scroll(2.7);
 
       const cmd = mockedExecSync.mock.calls[0][0] as string;
-      expect(cmd).toContain(', 3)');
+      if (process.platform === 'linux') {
+        expect(cmd).toContain('xdotool');
+      } else {
+        expect(cmd).toContain(', 3)');
+      }
     });
 
     it('handles zero deltaY', () => {
       screen.scroll(0);
 
       const cmd = mockedExecSync.mock.calls[0][0] as string;
-      expect(cmd).toContain(', 0)');
+      if (process.platform === 'linux') {
+        expect(cmd).toContain('xdotool');
+      } else {
+        expect(cmd).toContain(', 0)');
+      }
     });
   });
 
   describe('getScreenSize', () => {
     it('returns screen dimensions', () => {
-      mockedExecSync.mockReturnValueOnce('{"width":1920,"height":1080}\n' as any);
+      const mockValue = process.platform === 'linux' ? '1920 1080\n' : '{"width":1920,"height":1080}\n';
+      mockedExecSync.mockReturnValueOnce(mockValue as any);
 
       const size = screen.getScreenSize();
 
@@ -357,14 +375,22 @@ describe('screen', () => {
     });
   });
 
-  // ── escapeShell tests ────────────────────────────────────────
+  // ── Platform-aware tests ────────────────────────────────────
 
-  describe('shell escaping (Linux paths)', () => {
-    it('clickAt with double click passes correct params', () => {
+  describe('platform-aware behavior', () => {
+    const isLinux = process.platform === 'linux';
+
+    it('clickAt with double click calls execSync', () => {
       screen.clickAt(100, 200, { double: true });
-      // On macOS, should call osascript twice
       const calls = mockedExecSync.mock.calls;
-      expect(calls.length).toBe(2);
+      if (isLinux) {
+        // xdotool: single call with --repeat 2
+        expect(calls.length).toBe(1);
+        expect(calls[0][0]).toContain('xdotool');
+      } else {
+        // macOS: two osascript calls
+        expect(calls.length).toBe(2);
+      }
     });
 
     it('rightClickAt calls execSync', () => {
@@ -377,17 +403,48 @@ describe('screen', () => {
       expect(mockedExecSync).toHaveBeenCalled();
     });
 
-    it('pressKey with modifiers passes modifier string', () => {
+    it('pressKey with modifiers passes correct format', () => {
       screen.pressKey('enter', ['command', 'shift']);
       const call = mockedExecSync.mock.calls[0][0] as string;
-      expect(call).toContain('command down');
-      expect(call).toContain('shift down');
+      if (isLinux) {
+        expect(call).toContain('xdotool key');
+        expect(call).toContain('super');
+        expect(call).toContain('shift');
+      } else {
+        expect(call).toContain('command down');
+        expect(call).toContain('shift down');
+      }
     });
 
-    it('pressKey with unknown key falls back to typeText', () => {
+    it('pressKey with unknown key types it as text', () => {
       screen.pressKey('a');
       const call = mockedExecSync.mock.calls[0][0] as string;
-      expect(call).toContain('keystroke');
+      if (isLinux) {
+        expect(call).toContain('xdotool');
+      } else {
+        expect(call).toContain('keystroke');
+      }
+    });
+
+    it('scroll calls execSync with direction', () => {
+      screen.scroll(100);
+      const call = mockedExecSync.mock.calls[0][0] as string;
+      if (isLinux) {
+        expect(call).toContain('xdotool click');
+        expect(call).toContain('5'); // scroll down = button 5
+      } else {
+        expect(call).toContain('CGEventCreateScrollWheelEvent');
+      }
+    });
+
+    it('getScreenSize returns width and height', () => {
+      if (isLinux) {
+        mockedExecSync.mockReturnValueOnce('1920 1080' as any);
+      } else {
+        mockedExecSync.mockReturnValueOnce('{"width":1920,"height":1080}' as any);
+      }
+      const size = screen.getScreenSize();
+      expect(size).toEqual({ width: 1920, height: 1080 });
     });
   });
 });

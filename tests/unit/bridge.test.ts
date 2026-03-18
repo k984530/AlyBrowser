@@ -963,6 +963,58 @@ describe('ExtensionBridge', () => {
       await p;
     });
 
+    // ── video MIME types ────────────────────────────────────
+
+    it('upload detects video/mp4 MIME type', async () => {
+      mockedFs.readFileSync.mockReturnValueOnce(Buffer.from('video-data'));
+      const p = bridge.upload('/media/clip.mp4');
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sent.params.mimeType).toBe('video/mp4');
+      expect(sent.params.fileName).toBe('clip.mp4');
+      simulateResponse(ws, sent.id, { ok: true });
+      await p;
+    });
+
+    it('upload detects video/webm MIME type', async () => {
+      mockedFs.readFileSync.mockReturnValueOnce(Buffer.from('video-data'));
+      const p = bridge.upload('/media/recording.webm');
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sent.params.mimeType).toBe('video/webm');
+      simulateResponse(ws, sent.id, { ok: true });
+      await p;
+    });
+
+    it('upload detects video/quicktime MIME type', async () => {
+      mockedFs.readFileSync.mockReturnValueOnce(Buffer.from('video-data'));
+      const p = bridge.upload('/media/movie.mov');
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sent.params.mimeType).toBe('video/quicktime');
+      simulateResponse(ws, sent.id, { ok: true });
+      await p;
+    });
+
+    it('upload handles large file data (10MB+)', async () => {
+      const largeBuffer = Buffer.alloc(10 * 1024 * 1024, 'x'); // 10MB
+      mockedFs.readFileSync.mockReturnValueOnce(largeBuffer);
+      const p = bridge.upload('/media/large.mp4');
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sent.params.dataBase64).toBe(largeBuffer.toString('base64'));
+      expect(sent.params.dataBase64.length).toBeGreaterThan(13_000_000); // base64 is ~33% larger
+      simulateResponse(ws, sent.id, { ok: true });
+      await p;
+    });
+
+    it('upload without ref or frameId sends minimal params', async () => {
+      mockedFs.readFileSync.mockReturnValueOnce(Buffer.from('data'));
+      const p = bridge.upload('/file.mp4');
+      const sent = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sent.params.ref).toBeUndefined();
+      expect(sent.params.tabId).toBeUndefined();
+      expect(sent.params.frameId).toBeUndefined();
+      simulateResponse(ws, sent.id, { ok: true });
+      await p;
+    });
+
     // ── iframe / frameId support ───────────────────────────
 
     it('frameList sends correct action', async () => {
