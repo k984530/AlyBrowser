@@ -443,6 +443,13 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_network_throttle requires preset or delay', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_network_throttle', {});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('preset');
+  });
+
   it('browser_device_emulate requires preset or dimensions', async () => {
     const mcp = create();
     const result = await (mcp as any).handleTool('browser_device_emulate', {});

@@ -96,7 +96,7 @@ export class AlyBrowserMCPServer {
 
   constructor() {
     this.server = new Server(
-      { name: 'aly-browser', version: process.env.npm_package_version || '2.4.0' },
+      { name: 'aly-browser', version: process.env.npm_package_version || '2.5.0' },
       {
         capabilities: { tools: {} },
         instructions: INSTRUCTIONS,
@@ -300,6 +300,10 @@ export class AlyBrowserMCPServer {
       // Performance
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
+
+      // Network Throttle
+      case 'browser_network_throttle':
+        return this.handleNetworkThrottle(args);
 
       // Device Emulate
       case 'browser_device_emulate':
@@ -1075,6 +1079,53 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Network Throttle ─────────────────────────────────────
+
+  private async handleNetworkThrottle(args: Record<string, unknown>): Promise<ToolResult> {
+    const action = (args.action as string) || 'enable';
+
+    if (action === 'enable') {
+      const presets: Record<string, number> = { '3g': 2000, '4g': 500, slow: 5000, offline: -1 };
+      const preset = args.preset as string | undefined;
+      const delay = (args.delayMs as number) ?? (preset ? presets[preset] : undefined);
+      if (delay === undefined) return errorResult('Provide a preset (3g/4g/slow/offline) or delayMs');
+    }
+
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    if (action === 'disable') {
+      await bridge.evaluate(`(() => {
+        if (window.__alyOrigFetch) { window.fetch = window.__alyOrigFetch; delete window.__alyOrigFetch; }
+        if (window.__alyOrigXHR) { XMLHttpRequest.prototype.send = window.__alyOrigXHR; delete window.__alyOrigXHR; }
+      })()`, tabId);
+      return textResult('[Network Throttle] Disabled — restored original fetch/XHR.');
+    }
+
+    const presetMap: Record<string, number> = { '3g': 2000, '4g': 500, slow: 5000, offline: -1 };
+    const preset = args.preset as string | undefined;
+    const delay = (args.delayMs as number) ?? (preset ? presetMap[preset] : 0);
+
+    await bridge.evaluate(`(() => {
+      const delay = ${delay};
+      // Throttle fetch
+      if (!window.__alyOrigFetch) window.__alyOrigFetch = window.fetch;
+      window.fetch = (...args) => {
+        if (delay < 0) return Promise.reject(new TypeError('Network request failed (offline mode)'));
+        return new Promise(r => setTimeout(() => r(window.__alyOrigFetch(...args)), delay));
+      };
+      // Throttle XHR
+      if (!window.__alyOrigXHR) window.__alyOrigXHR = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.send = function(...args) {
+        if (delay < 0) { this.dispatchEvent(new Event('error')); return; }
+        setTimeout(() => window.__alyOrigXHR.apply(this, args), delay);
+      };
+    })()`, tabId);
+
+    const label = preset || `${delay}ms`;
+    return textResult(`[Network Throttle] Enabled: ${label} (${delay < 0 ? 'offline' : delay + 'ms delay'})`);
   }
 
   // ── Device Emulate ───────────────────────────────────────

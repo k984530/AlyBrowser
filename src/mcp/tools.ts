@@ -563,6 +563,24 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Network Throttle ─────────────────────────────────────
+  {
+    name: 'browser_network_throttle',
+    description:
+      'Simulate slow network by intercepting fetch/XHR with artificial delay. ' +
+      'Presets: 3g (2000ms), 4g (500ms), slow (5000ms), offline (reject all). Action: "enable" or "disable".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        preset: { type: 'string', enum: ['3g', '4g', 'slow', 'offline'], description: 'Network speed preset' },
+        delayMs: { type: 'number', description: 'Custom delay in ms (overrides preset)' },
+        action: { type: 'string', enum: ['enable', 'disable'], description: 'enable (default) or disable' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Device Emulate ───────────────────────────────────────
   {
     name: 'browser_device_emulate',
