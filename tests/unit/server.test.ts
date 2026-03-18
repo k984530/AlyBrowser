@@ -443,6 +443,11 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_dialog_handler throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_dialog_handler', {})).rejects.toThrow('No browser session');
+  });
+
   it('browser_style_override inject requires css', async () => {
     const mcp = create();
     const result = await (mcp as any).handleTool('browser_style_override', { action: 'inject' });

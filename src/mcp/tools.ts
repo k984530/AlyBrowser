@@ -563,6 +563,26 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Dialog Handler ────────────────────────────────────────
+  {
+    name: 'browser_dialog_handler',
+    description:
+      'Configure automatic handling of JavaScript dialogs (alert, confirm, prompt). ' +
+      'Set default responses so dialogs don\'t block automation. ' +
+      'Actions: "configure" (set auto-responses), "status" (check current config), "history" (view past dialogs).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['configure', 'status', 'history'], description: 'Action (default: status)' },
+        alert: { type: 'string', enum: ['accept', 'dismiss'], description: 'Auto-response for alert() (default: accept)' },
+        confirm: { type: 'string', enum: ['accept', 'dismiss'], description: 'Auto-response for confirm() (default: accept)' },
+        promptValue: { type: 'string', description: 'Auto-response value for prompt() (default: empty string)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Style Override ────────────────────────────────────────
   {
     name: 'browser_style_override',

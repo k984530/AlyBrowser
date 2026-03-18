@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Dialog Handler
+      case 'browser_dialog_handler':
+        return this.handleDialogHandler(args);
+
       // Style Override
       case 'browser_style_override':
         return this.handleStyleOverride(args);
@@ -968,6 +972,54 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Dialog Handler ────────────────────────────────────────
+
+  private async handleDialogHandler(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const action = (args.action as string) || 'status';
+
+    if (action === 'configure') {
+      const alertResp = (args.alert as string) || 'accept';
+      const confirmResp = (args.confirm as string) || 'accept';
+      const promptVal = (args.promptValue as string) ?? '';
+
+      await bridge.evaluate(`(() => {
+        window.__alyDialogHistory = window.__alyDialogHistory || [];
+        const maxHistory = 50;
+        const push = (entry) => {
+          if (window.__alyDialogHistory.length >= maxHistory) window.__alyDialogHistory.shift();
+          window.__alyDialogHistory.push(entry);
+        };
+
+        window.alert = (msg) => { push({ type: 'alert', message: String(msg).slice(0, 200), response: '${alertResp}', ts: Date.now() }); };
+        window.confirm = (msg) => { push({ type: 'confirm', message: String(msg).slice(0, 200), response: '${confirmResp}', ts: Date.now() }); return ${confirmResp === 'accept'}; };
+        window.prompt = (msg, def) => { push({ type: 'prompt', message: String(msg).slice(0, 200), response: ${JSON.stringify(promptVal)}, ts: Date.now() }); return ${JSON.stringify(promptVal)}; };
+        window.__alyDialogConfig = { alert: '${alertResp}', confirm: '${confirmResp}', prompt: ${JSON.stringify(promptVal)} };
+      })()`, tabId);
+
+      return textResult(`[Dialog Handler] Configured: alert=${alertResp}, confirm=${confirmResp}, prompt="${promptVal}"`);
+    }
+
+    if (action === 'history') {
+      const result = await bridge.evaluate(`JSON.stringify(window.__alyDialogHistory || [])`, tabId);
+      const history = typeof result === 'string' ? JSON.parse(result) : result;
+      if (!history || history.length === 0) return textResult('[Dialog Handler] No dialogs captured yet.');
+
+      const lines = [`[Dialog Handler] ${history.length} dialog(s)`];
+      for (const d of history.slice(-20)) {
+        lines.push(`  [${d.type}] "${d.message}" → ${d.response}`);
+      }
+      return textResult(lines.join('\n'));
+    }
+
+    // status
+    const result = await bridge.evaluate(`JSON.stringify(window.__alyDialogConfig || null)`, tabId);
+    const config = typeof result === 'string' ? JSON.parse(result) : result;
+    if (!config) return textResult('[Dialog Handler] Not configured. Use action="configure" to set auto-responses.');
+    return textResult(`[Dialog Handler] Active: alert=${config.alert}, confirm=${config.confirm}, prompt="${config.prompt}"`);
   }
 
   // ── Style Override ────────────────────────────────────────
