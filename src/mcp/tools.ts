@@ -563,6 +563,40 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Form Automation ────────────────────────────────────────
+  {
+    name: 'browser_form_fill',
+    description:
+      'Auto-fill form fields on the current page. Detects field types by name/id/autocomplete/label ' +
+      'and fills matching values. Pass a data object with keys like "email", "name", "phone", "address", etc. ' +
+      'Unmatched fields are skipped. Returns a report of filled/skipped fields.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        data: {
+          type: 'object',
+          description: 'Key-value pairs to fill. Keys: email, name, firstName, lastName, phone, address, city, zip, country, company, password, username, or any field name/id.',
+        },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['data'],
+    },
+  },
+  {
+    name: 'browser_form_detect',
+    description:
+      'Detect all form fields on the current page. Returns field type, name, id, autocomplete attribute, ' +
+      'current value, and detected semantic type (email, name, phone, etc.). Use before browser_form_fill.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Accessibility ──────────────────────────────────────────
   {
     name: 'browser_a11y_audit',

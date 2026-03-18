@@ -443,6 +443,23 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_form_fill throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_form_fill', { data: { email: 'x' } })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_form_fill rejects invalid data', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_form_fill', {});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('"data" must be an object');
+  });
+
+  it('browser_form_detect throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_form_detect', {})).rejects.toThrow('No browser session');
+  });
+
   it('browser_a11y_audit throws without session', async () => {
     const mcp = create();
     await expect((mcp as any).handleTool('browser_a11y_audit', {})).rejects.toThrow('No browser session');

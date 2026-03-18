@@ -301,6 +301,12 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Form Automation
+      case 'browser_form_fill':
+        return this.handleFormFill(args);
+      case 'browser_form_detect':
+        return this.handleFormDetect(args);
+
       // Accessibility
       case 'browser_a11y_audit':
         return this.handleA11yAudit(args);
@@ -881,6 +887,139 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Form Automation ────────────────────────────────────────
+
+  private async handleFormDetect(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const fields = await bridge.evaluate(`(() => {
+      const classify = (el) => {
+        const name = (el.name || '').toLowerCase();
+        const id = (el.id || '').toLowerCase();
+        const ac = (el.getAttribute('autocomplete') || '').toLowerCase();
+        const type = (el.type || 'text').toLowerCase();
+        const label = el.labels?.[0]?.textContent?.toLowerCase() || '';
+        const ph = (el.placeholder || '').toLowerCase();
+        const all = name + ' ' + id + ' ' + ac + ' ' + label + ' ' + ph;
+
+        if (type === 'email' || ac === 'email' || all.includes('email')) return 'email';
+        if (type === 'password' || ac === 'new-password' || ac === 'current-password') return 'password';
+        if (type === 'tel' || ac === 'tel' || all.includes('phone') || all.includes('tel')) return 'phone';
+        if (ac === 'given-name' || all.includes('first') && all.includes('name')) return 'firstName';
+        if (ac === 'family-name' || all.includes('last') && all.includes('name')) return 'lastName';
+        if (ac === 'name' || all.includes('name') && !all.includes('user')) return 'name';
+        if (ac === 'username' || all.includes('user')) return 'username';
+        if (ac === 'street-address' || all.includes('address') || all.includes('street')) return 'address';
+        if (ac === 'address-level2' || all.includes('city')) return 'city';
+        if (ac === 'postal-code' || all.includes('zip') || all.includes('postal')) return 'zip';
+        if (ac === 'country' || all.includes('country')) return 'country';
+        if (ac === 'organization' || all.includes('company') || all.includes('org')) return 'company';
+        return 'unknown';
+      };
+      return JSON.stringify(
+        [...document.querySelectorAll('input, select, textarea')]
+          .filter(el => el.type !== 'hidden' && el.type !== 'submit' && el.type !== 'button')
+          .map(el => ({
+            tag: el.tagName.toLowerCase(),
+            type: el.type || 'text',
+            name: el.name || '',
+            id: el.id || '',
+            autocomplete: el.getAttribute('autocomplete') || '',
+            semantic: classify(el),
+            value: el.type === 'password' ? '' : (el.value || '').slice(0, 50),
+            required: el.required,
+          }))
+      );
+    })()`, tabId);
+
+    const parsed = typeof fields === 'string' ? JSON.parse(fields) : fields;
+    return jsonResult(parsed);
+  }
+
+  private async handleFormFill(args: Record<string, unknown>): Promise<ToolResult> {
+    const data = args.data as Record<string, string>;
+    if (!data || typeof data !== 'object') {
+      return errorResult('"data" must be an object with field values');
+    }
+
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const dataJson = JSON.stringify(data);
+    const result = await bridge.evaluate(`(() => {
+      const data = ${dataJson};
+      const filled = [];
+      const skipped = [];
+
+      const classify = (el) => {
+        const name = (el.name || '').toLowerCase();
+        const id = (el.id || '').toLowerCase();
+        const ac = (el.getAttribute('autocomplete') || '').toLowerCase();
+        const type = (el.type || 'text').toLowerCase();
+        const label = el.labels?.[0]?.textContent?.toLowerCase() || '';
+        const ph = (el.placeholder || '').toLowerCase();
+        const all = name + ' ' + id + ' ' + ac + ' ' + label + ' ' + ph;
+
+        if (type === 'email' || ac === 'email' || all.includes('email')) return 'email';
+        if (type === 'password' || ac === 'new-password' || ac === 'current-password') return 'password';
+        if (type === 'tel' || ac === 'tel' || all.includes('phone') || all.includes('tel')) return 'phone';
+        if (ac === 'given-name' || all.includes('first') && all.includes('name')) return 'firstName';
+        if (ac === 'family-name' || all.includes('last') && all.includes('name')) return 'lastName';
+        if (ac === 'name' || all.includes('name') && !all.includes('user')) return 'name';
+        if (ac === 'username' || all.includes('user')) return 'username';
+        if (ac === 'street-address' || all.includes('address') || all.includes('street')) return 'address';
+        if (ac === 'address-level2' || all.includes('city')) return 'city';
+        if (ac === 'postal-code' || all.includes('zip') || all.includes('postal')) return 'zip';
+        if (ac === 'country' || all.includes('country')) return 'country';
+        if (ac === 'organization' || all.includes('company') || all.includes('org')) return 'company';
+        return null;
+      };
+
+      document.querySelectorAll('input, select, textarea').forEach(el => {
+        if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return;
+        const semantic = classify(el);
+        const byName = data[el.name] || data[el.id];
+        const bySemantic = semantic ? data[semantic] : null;
+        const value = byName || bySemantic;
+
+        if (value) {
+          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+            el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value'
+          )?.set;
+          if (nativeInputValueSetter) nativeInputValueSetter.call(el, value);
+          else el.value = value;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          filled.push({ name: el.name || el.id, semantic, value: el.type === 'password' ? '***' : value });
+        } else {
+          skipped.push({ name: el.name || el.id, semantic, type: el.type });
+        }
+      });
+
+      return JSON.stringify({ filled, skipped });
+    })()`, tabId);
+
+    const parsed = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = [
+      `[Form Fill] ${parsed.filled.length} filled, ${parsed.skipped.length} skipped`,
+    ];
+    if (parsed.filled.length > 0) {
+      lines.push('', '── Filled ──');
+      for (const f of parsed.filled) {
+        lines.push(`  ${f.name || f.semantic}: ${f.value}`);
+      }
+    }
+    if (parsed.skipped.length > 0) {
+      lines.push('', '── Skipped ──');
+      for (const s of parsed.skipped) {
+        lines.push(`  ${s.name || '(unnamed)'} [${s.type}] → ${s.semantic || 'unknown'}`);
+      }
+    }
 
     return textResult(lines.join('\n'));
   }
