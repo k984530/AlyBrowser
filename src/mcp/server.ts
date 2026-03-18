@@ -96,7 +96,7 @@ export class AlyBrowserMCPServer {
 
   constructor() {
     this.server = new Server(
-      { name: 'aly-browser', version: process.env.npm_package_version || '1.0.0' },
+      { name: 'aly-browser', version: process.env.npm_package_version || '1.1.0' },
       {
         capabilities: { tools: {} },
         instructions: INSTRUCTIONS,

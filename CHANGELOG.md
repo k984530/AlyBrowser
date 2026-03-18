@@ -1,21 +1,30 @@
 # Changelog
 
-## [Unreleased]
-
-### Fixed
-- CI workflow: add build step before test (mcp-protocol tests require dist/)
-- publish.yml: reorder build before test
-
-### Changed
-- Export auth API (`generateSecret`, `signJwt`, `verifyJwt`, `TokenPayload`) from package root
-- Encrypted storage fallback: try plaintext on decryption failure
-- Remove unused `_lastUrls` field from bridge
+## [1.1.0] - 2026-03-18
 
 ### Added
-- 331 tests (from 291): server handler error paths, auto-learn utilities
-- `eslint.config.js` flat config
-- `plugin.yaml` Aly ecosystem plugin definition
-- `.gitignore`: coverage, screenshots, pipeline artifacts
+- **`browser_snapshot_diff`**: Compare snapshots, return only changes (60-90% token reduction)
+- **`browser_perf_metrics`**: Page performance metrics (TTFB, DOM complexity, resources)
+- **`browser_a11y_audit`**: Lightweight WCAG accessibility checker (10 rules)
+- **`browser_form_fill`**: Auto-fill forms by semantic field type detection
+- **`browser_form_detect`**: Scan and classify form fields
+- **AutoLoginManager**: Encrypted credential storage, SSO chain resolution, login state cache
+- Linux screen tools: xdotool/import/gnome-screenshot/scrot support
+- Nested iframe depth support in `browser_frame_list`
+- Korean sensitive data patterns (5 types: resident ID, passport, license, account, phone)
+- Video/audio MIME types (mp4, webm, mov, avi, mkv, mp3, wav, ogg)
+- 421 tests (from 229), 54 MCP tools (from 49)
+
+### Fixed
+- CI: build before test (mcp-protocol needs dist/)
+- publish.yml: reorder build before test
+- Screen tests: platform-aware for Linux CI
+- SEC-B01: Remove plaintext fallback in site knowledge encryption
+- SEC-B02: Validate snapshot diff inputs (null/undefined safe)
+
+### Changed
+- Export auth API from package root
+- Encrypted storage: try plaintext on decryption failure (migration)
 
 ## [1.0.0] - 2026-03-18
 
