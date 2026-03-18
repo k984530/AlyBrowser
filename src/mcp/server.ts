@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // CAPTCHA Detection
+      case 'browser_captcha_detect':
+        return this.handleCaptchaDetect(args);
+
       // DOM Observer
       case 'browser_dom_observe':
         return this.handleDomObserve(args);
@@ -932,6 +936,67 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── CAPTCHA Detection ─────────────────────────────────────
+
+  private async handleCaptchaDetect(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const detections = [];
+
+      // reCAPTCHA v2 (checkbox)
+      const recaptchaV2 = document.querySelector('.g-recaptcha, [data-sitekey], iframe[src*="recaptcha"]');
+      if (recaptchaV2) detections.push({ type: 'reCAPTCHA v2', element: recaptchaV2.tagName.toLowerCase(), visible: recaptchaV2.offsetParent !== null });
+
+      // reCAPTCHA v3 (invisible)
+      if (document.querySelector('script[src*="recaptcha/api.js?render="]') || window.grecaptcha) {
+        detections.push({ type: 'reCAPTCHA v3', element: 'script', visible: false });
+      }
+
+      // hCaptcha
+      const hcaptcha = document.querySelector('.h-captcha, iframe[src*="hcaptcha"]');
+      if (hcaptcha) detections.push({ type: 'hCaptcha', element: hcaptcha.tagName.toLowerCase(), visible: hcaptcha.offsetParent !== null });
+
+      // Cloudflare Turnstile
+      const turnstile = document.querySelector('.cf-turnstile, iframe[src*="challenges.cloudflare.com"]');
+      if (turnstile) detections.push({ type: 'Cloudflare Turnstile', element: turnstile.tagName.toLowerCase(), visible: turnstile.offsetParent !== null });
+
+      // Cloudflare challenge page
+      if (document.title.includes('Just a moment') || document.querySelector('#challenge-running, #challenge-stage')) {
+        detections.push({ type: 'Cloudflare Challenge Page', element: 'page', visible: true, blocking: true });
+      }
+
+      // Generic challenge indicators
+      const bodyText = document.body?.textContent?.toLowerCase() || '';
+      if (bodyText.includes('verify you are human') || bodyText.includes('prove you are not a robot')) {
+        detections.push({ type: 'Generic Challenge', element: 'text', visible: true });
+      }
+
+      // PerimeterX / DataDome
+      if (document.querySelector('iframe[src*="perimeterx"], iframe[src*="datadome"]')) {
+        detections.push({ type: 'Bot Protection (PerimeterX/DataDome)', element: 'iframe', visible: true });
+      }
+
+      return JSON.stringify({ found: detections.length > 0, detections, url: location.href });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (!data.found) {
+      return textResult(`[CAPTCHA] No CAPTCHA detected on ${data.url}`);
+    }
+
+    const lines = [`[CAPTCHA] ${data.detections.length} detection(s) on ${data.url}`];
+    for (const d of data.detections) {
+      const vis = d.visible ? 'visible' : 'hidden';
+      const block = d.blocking ? ' [BLOCKING]' : '';
+      lines.push(`  ${d.type} (${d.element}, ${vis})${block}`);
+    }
 
     return textResult(lines.join('\n'));
   }

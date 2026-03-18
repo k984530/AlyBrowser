@@ -563,6 +563,21 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── CAPTCHA Detection ─────────────────────────────────────
+  {
+    name: 'browser_captcha_detect',
+    description:
+      'Detect CAPTCHA presence on the current page. Checks for reCAPTCHA v2/v3, hCaptcha, Cloudflare Turnstile, ' +
+      'and generic challenge patterns. Returns type, location, and whether it blocks page interaction.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── DOM Observer ──────────────────────────────────────────
   {
     name: 'browser_dom_observe',
