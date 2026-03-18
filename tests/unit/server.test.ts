@@ -443,6 +443,53 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_wait_for_url requires pattern', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_wait_for_url', {})).rejects.toThrow('"pattern" must be a non-empty string');
+  });
+
+  it('browser_wait_for_url throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_wait_for_url', { pattern: '/dashboard' })).rejects.toThrow('No browser session');
+  });
+
+  // ── Mock bridge tests for new tools ──────────────────────
+
+  describe('handleSnapshotDiff with mock bridge', () => {
+    function createMcpWithMockBridge() {
+      const mcp = create();
+      const mockBridge = { isConnected: true, snapshot: vi.fn() };
+      (mcp as any).sessions.set('default', mockBridge);
+      return { mcp, mockBridge };
+    }
+
+    it('returns first snapshot message when no previous', async () => {
+      const { mcp, mockBridge } = createMcpWithMockBridge();
+      mockBridge.snapshot.mockResolvedValue('[RootWebArea] "Test"');
+      const result = await (mcp as any).handleSnapshotDiff({});
+      expect(result.content[0].text).toContain('First snapshot');
+    });
+
+    it('returns diff after second call', async () => {
+      const { mcp, mockBridge } = createMcpWithMockBridge();
+      mockBridge.snapshot.mockResolvedValue('[RootWebArea] "Page1"');
+      await (mcp as any).handleSnapshotDiff({});
+      mockBridge.snapshot.mockResolvedValue('[RootWebArea] "Page2"');
+      const result = await (mcp as any).handleSnapshotDiff({});
+      expect(result.content[0].text).toContain('Snapshot Diff');
+    });
+
+    it('returns no changes for identical snapshots', async () => {
+      const { mcp, mockBridge } = createMcpWithMockBridge();
+      const snap = '[RootWebArea] "Same"';
+      mockBridge.snapshot.mockResolvedValue(snap);
+      await (mcp as any).handleSnapshotDiff({});
+      mockBridge.snapshot.mockResolvedValue(snap);
+      const result = await (mcp as any).handleSnapshotDiff({});
+      expect(result.content[0].text).toContain('No changes');
+    });
+  });
+
   it('browser_click_all requires selector', async () => {
     const mcp = create();
     await expect((mcp as any).handleTool('browser_click_all', {})).rejects.toThrow('"selector" must be a non-empty string');

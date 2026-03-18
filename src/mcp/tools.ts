@@ -563,6 +563,24 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Wait for URL ─────────────────────────────────────────
+  {
+    name: 'browser_wait_for_url',
+    description:
+      'Wait until the page URL matches a pattern (contains, starts with, or regex). ' +
+      'Useful for waiting after form submission, OAuth redirects, or SPA navigation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pattern: { type: 'string', description: 'URL pattern to match (substring, or /regex/)' },
+        timeout: { type: 'number', description: 'Max wait ms (default: 15000)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['pattern'],
+    },
+  },
+
   // ── Batch Click ──────────────────────────────────────────
   {
     name: 'browser_click_all',

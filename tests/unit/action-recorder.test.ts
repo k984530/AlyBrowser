@@ -118,4 +118,19 @@ describe('ActionRecorder', () => {
     ar.delete(rec.id);
     expect(ar.isRecording()).toBe(false);
   });
+
+  it('actions include timestamps', () => {
+    const ar = new ActionRecorder();
+    const before = Date.now();
+    ar.start('ts-test', 'https://example.com');
+    ar.record('click', '@e0');
+    const rec = ar.get(ar.getActiveId()!);
+    expect(rec!.actions[1].timestamp).toBeGreaterThanOrEqual(before);
+  });
+
+  it('import assigns new ID if missing', () => {
+    const ar = new ActionRecorder();
+    const imported = ar.import(JSON.stringify({ name: 'no-id', url: 'https://x.com', actions: [], startedAt: 0 }));
+    expect(imported.id).toMatch(/^rec-/);
+  });
 });

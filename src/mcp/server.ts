@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Wait for URL
+      case 'browser_wait_for_url':
+        return this.handleWaitForUrl(args);
+
       // Batch Click
       case 'browser_click_all':
         return this.handleClickAll(args);
@@ -992,6 +996,55 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Wait for URL ─────────────────────────────────────────
+
+  private async handleWaitForUrl(args: Record<string, unknown>): Promise<ToolResult> {
+    const pattern = this.requireString(args, 'pattern');
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const timeout = (args.timeout as number) ?? 15000;
+
+    const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
+    const patternJson = JSON.stringify(pattern);
+
+    const result = await bridge.evaluate(`new Promise((resolve) => {
+      const pattern = ${patternJson};
+      const timeout = ${timeout};
+      const isRegex = ${isRegex};
+      const start = Date.now();
+
+      const check = () => {
+        const url = location.href;
+        let matched = false;
+        if (isRegex) {
+          try {
+            const parts = pattern.match(/^\\/(.+)\\/([gimsuy]*)$/);
+            if (parts) matched = new RegExp(parts[1], parts[2]).test(url);
+          } catch {}
+        } else {
+          matched = url.includes(pattern);
+        }
+        if (matched) {
+          resolve(JSON.stringify({ matched: true, url, elapsed: Date.now() - start }));
+          return;
+        }
+        if (Date.now() - start > timeout) {
+          resolve(JSON.stringify({ matched: false, url, elapsed: Date.now() - start, timedOut: true }));
+          return;
+        }
+        setTimeout(check, 200);
+      };
+      check();
+    })`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (data.timedOut) {
+      return errorResult(`URL pattern "${pattern}" not matched after ${data.elapsed}ms. Current: ${data.url}`);
+    }
+    return textResult(`[URL Match] "${pattern}" matched after ${data.elapsed}ms → ${data.url}`);
   }
 
   // ── Batch Click ──────────────────────────────────────────
