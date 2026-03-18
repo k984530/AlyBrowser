@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Wait for Text
+      case 'browser_wait_for_text':
+        return this.handleWaitForText(args);
+
       // Page Audit
       case 'browser_page_audit':
         return this.handlePageAudit(args);
@@ -956,6 +960,55 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Wait for Text ─────────────────────────────────────────
+
+  private async handleWaitForText(args: Record<string, unknown>): Promise<ToolResult> {
+    const text = this.requireString(args, 'text');
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const hidden = (args.hidden as boolean) ?? false;
+    const timeout = (args.timeout as number) ?? 10000;
+
+    const textJson = JSON.stringify(text);
+    const result = await bridge.evaluate(`new Promise((resolve) => {
+      const text = ${textJson};
+      const hidden = ${hidden};
+      const timeout = ${timeout};
+      const start = Date.now();
+
+      const check = () => {
+        const found = document.body?.textContent?.includes(text) || false;
+        const done = hidden ? !found : found;
+        if (done) {
+          resolve(JSON.stringify({ found: !hidden, elapsed: Date.now() - start }));
+          return;
+        }
+        if (Date.now() - start > timeout) {
+          resolve(JSON.stringify({ found: hidden ? true : false, elapsed: Date.now() - start, timedOut: true }));
+          return;
+        }
+        setTimeout(check, 200);
+      };
+      check();
+    })`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (data.timedOut) {
+      return errorResult(
+        hidden
+          ? `Text "${text}" still present after ${data.elapsed}ms (timeout)`
+          : `Text "${text}" not found after ${data.elapsed}ms (timeout)`,
+      );
+    }
+
+    return textResult(
+      hidden
+        ? `Text "${text}" disappeared after ${data.elapsed}ms.`
+        : `Text "${text}" found after ${data.elapsed}ms.`,
+    );
   }
 
   // ── Page Audit (Unified) ──────────────────────────────────

@@ -563,6 +563,26 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Wait for Text ─────────────────────────────────────────
+  {
+    name: 'browser_wait_for_text',
+    description:
+      'Wait until specific text appears (or disappears) on the page. ' +
+      'Uses polling with configurable timeout. More intuitive than browser_wait (CSS selector). ' +
+      'Useful for waiting on dynamic content, loading indicators, or confirmation messages.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'Text to wait for' },
+        hidden: { type: 'boolean', description: 'Wait for text to disappear instead (default: false)' },
+        timeout: { type: 'number', description: 'Max wait ms (default: 10000)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['text'],
+    },
+  },
+
   // ── Page Audit (Unified) ──────────────────────────────────
   {
     name: 'browser_page_audit',
