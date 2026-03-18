@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.1.0] - 2026-03-18
+
+### Added
+- **`browser_dialog_handler`**: Auto-respond to alert/confirm/prompt dialogs
+- **`browser_color_picker`**: Extract page color palette by frequency
+- **`browser_font_list`**: Page font usage analysis (families/sizes/weights)
+- **`browser_find_text`**: Structured text search with context
+- **`browser_popup_blocker`**: Detect/remove popups, modals, cookie banners
+- **`browser_click_all`**: Batch click elements by CSS selector
+- **`browser_wait_for_url`**: Wait for URL pattern match (substring/regex)
+- **`browser_style_override`**: Inject/remove CSS overrides
+- **`browser_local_storage`**: Full localStorage CRUD
+- **`browser_wait_for_text`**: Wait for text appear/disappear
+- **`browser_session_clone`**: Clone session with cookie transfer
+- **`browser_page_audit`**: Unified quality report (0-100 score)
+- **`ActionRecorder`**: Action recording/replay module
+- 82 MCP tools, 500 tests
+
 ## [2.0.0] - 2026-03-18
 
 ### Highlights
