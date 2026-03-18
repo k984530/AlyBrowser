@@ -563,6 +563,40 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Cookie Profile ────────────────────────────────────────
+  {
+    name: 'browser_cookie_export',
+    description:
+      'Export all cookies for a domain as a JSON profile. Useful for saving login state, ' +
+      'sharing sessions between instances, and backup/restore of authentication.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'URL to export cookies for' },
+        ...sessionIdProp,
+      },
+      required: ['url'],
+    },
+  },
+  {
+    name: 'browser_cookie_import',
+    description:
+      'Import cookies from a previously exported JSON profile. Restores login state ' +
+      'and session data. Use with browser_cookie_export for session transfer.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cookies: {
+          type: 'array',
+          description: 'Array of cookie objects from browser_cookie_export',
+          items: { type: 'object' },
+        },
+        ...sessionIdProp,
+      },
+      required: ['cookies'],
+    },
+  },
+
   // ── CAPTCHA Detection ─────────────────────────────────────
   {
     name: 'browser_captcha_detect',

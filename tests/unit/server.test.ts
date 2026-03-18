@@ -443,6 +443,18 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_cookie_export requires url', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_cookie_export', {})).rejects.toThrow('"url" must be a non-empty string');
+  });
+
+  it('browser_cookie_import rejects non-array', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_cookie_import', { cookies: 'bad' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('"cookies" must be an array');
+  });
+
   it('browser_captcha_detect throws without session', async () => {
     const mcp = create();
     await expect((mcp as any).handleTool('browser_captcha_detect', {})).rejects.toThrow('No browser session');

@@ -301,6 +301,12 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Cookie Profile
+      case 'browser_cookie_export':
+        return this.handleCookieExport(args);
+      case 'browser_cookie_import':
+        return this.handleCookieImport(args);
+
       // CAPTCHA Detection
       case 'browser_captcha_detect':
         return this.handleCaptchaDetect(args);
@@ -938,6 +944,35 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Cookie Profile ────────────────────────────────────────
+
+  private async handleCookieExport(args: Record<string, unknown>): Promise<ToolResult> {
+    const url = this.requireString(args, 'url');
+    const bridge = this.ensureConnected(args);
+    const cookies = await bridge.cookieGet(url);
+    const cookieArr = Array.isArray(cookies) ? cookies : [];
+    return jsonResult({ url, count: cookieArr.length, cookies: cookieArr });
+  }
+
+  private async handleCookieImport(args: Record<string, unknown>): Promise<ToolResult> {
+    if (!Array.isArray(args.cookies)) {
+      return errorResult('"cookies" must be an array of cookie objects');
+    }
+    const cookies = args.cookies as Array<Record<string, unknown>>;
+    const bridge = this.ensureConnected(args);
+    let imported = 0;
+    let failed = 0;
+    for (const cookie of cookies) {
+      try {
+        await bridge.cookieSet(cookie);
+        imported++;
+      } catch {
+        failed++;
+      }
+    }
+    return textResult(`[Cookie Import] ${imported} imported, ${failed} failed (${cookies.length} total)`);
   }
 
   // ── CAPTCHA Detection ─────────────────────────────────────
