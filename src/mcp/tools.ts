@@ -563,6 +563,24 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Drag and Drop ────────────────────────────────────────
+  {
+    name: 'browser_drag_drop',
+    description:
+      'Simulate drag and drop between two elements by CSS selector. Dispatches dragstart, drag, ' +
+      'dragenter, dragover, drop, and dragend events. Works with HTML5 drag-and-drop API.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', description: 'CSS selector of drag source element' },
+        target: { type: 'string', description: 'CSS selector of drop target element' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['source', 'target'],
+    },
+  },
+
   // ── Wait for URL ─────────────────────────────────────────
   {
     name: 'browser_wait_for_url',

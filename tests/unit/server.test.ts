@@ -443,6 +443,18 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_drag_drop requires source', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_drag_drop', { target: '.target' })).rejects.toThrow('"source" must be a non-empty string');
+  });
+
+  it('browser_drag_drop requires target', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_drag_drop', { source: '.src' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('"target" is required');
+  });
+
   it('browser_wait_for_url requires pattern', async () => {
     const mcp = create();
     await expect((mcp as any).handleTool('browser_wait_for_url', {})).rejects.toThrow('"pattern" must be a non-empty string');

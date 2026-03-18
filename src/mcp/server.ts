@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Drag and Drop
+      case 'browser_drag_drop':
+        return this.handleDragDrop(args);
+
       // Wait for URL
       case 'browser_wait_for_url':
         return this.handleWaitForUrl(args);
@@ -996,6 +1000,43 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── Drag and Drop ────────────────────────────────────────
+
+  private async handleDragDrop(args: Record<string, unknown>): Promise<ToolResult> {
+    const source = this.requireString(args, 'source');
+    const target = args.target as string;
+    if (!target) return errorResult('"target" is required');
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const src = document.querySelector(${JSON.stringify(source)});
+      const tgt = document.querySelector(${JSON.stringify(target)});
+      if (!src) return JSON.stringify({ error: 'Source not found: ' + ${JSON.stringify(source)} });
+      if (!tgt) return JSON.stringify({ error: 'Target not found: ' + ${JSON.stringify(target)} });
+
+      const dt = new DataTransfer();
+      const opts = { bubbles: true, cancelable: true, dataTransfer: dt };
+
+      src.dispatchEvent(new DragEvent('dragstart', opts));
+      src.dispatchEvent(new DragEvent('drag', opts));
+      tgt.dispatchEvent(new DragEvent('dragenter', opts));
+      tgt.dispatchEvent(new DragEvent('dragover', opts));
+      tgt.dispatchEvent(new DragEvent('drop', opts));
+      src.dispatchEvent(new DragEvent('dragend', opts));
+
+      return JSON.stringify({
+        ok: true,
+        source: src.tagName.toLowerCase() + (src.id ? '#' + src.id : ''),
+        target: tgt.tagName.toLowerCase() + (tgt.id ? '#' + tgt.id : ''),
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    if (data.error) return errorResult(data.error);
+    return textResult(`[Drag & Drop] ${data.source} → ${data.target}`);
   }
 
   // ── Wait for URL ─────────────────────────────────────────
