@@ -563,6 +563,21 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Core Web Vitals ──────────────────────────────────────
+  {
+    name: 'browser_web_vitals',
+    description:
+      'Measure Core Web Vitals: LCP (Largest Contentful Paint), CLS (Cumulative Layout Shift), ' +
+      'FCP (First Contentful Paint), and TTFB. Reports pass/fail against Google thresholds.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Element Remove ───────────────────────────────────────
   {
     name: 'browser_element_remove',

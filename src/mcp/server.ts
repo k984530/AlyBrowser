@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Core Web Vitals
+      case 'browser_web_vitals':
+        return this.handleWebVitals(args);
+
       // Element Remove
       case 'browser_element_remove':
         return this.handleElementRemove(args);
@@ -1085,6 +1089,57 @@ export class AlyBrowserMCPServer {
       `  Total: ${data.resources.total}`,
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Core Web Vitals ──────────────────────────────────────
+
+  private async handleWebVitals(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const t = performance.timing;
+      const navEntries = performance.getEntriesByType('navigation');
+      const paintEntries = performance.getEntriesByType('paint');
+
+      const fcp = paintEntries.find(e => e.name === 'first-contentful-paint')?.startTime || 0;
+      const ttfb = t.responseStart - t.navigationStart;
+
+      // LCP from PerformanceObserver entries if available
+      const lcpEntries = performance.getEntriesByType('largest-contentful-paint');
+      const lcp = lcpEntries.length > 0 ? lcpEntries[lcpEntries.length - 1].startTime : 0;
+
+      // CLS from layout-shift entries
+      let cls = 0;
+      const lsEntries = performance.getEntriesByType('layout-shift');
+      for (const e of lsEntries) { if (!e.hadRecentInput) cls += e.value; }
+
+      // Thresholds (Google)
+      const grade = (val, good, poor) => val <= good ? 'good' : val <= poor ? 'needs-improvement' : 'poor';
+
+      return JSON.stringify({
+        lcp: { value: Math.round(lcp), unit: 'ms', grade: grade(lcp, 2500, 4000) },
+        fcp: { value: Math.round(fcp), unit: 'ms', grade: grade(fcp, 1800, 3000) },
+        cls: { value: Math.round(cls * 1000) / 1000, unit: '', grade: grade(cls, 0.1, 0.25) },
+        ttfb: { value: Math.round(ttfb), unit: 'ms', grade: grade(ttfb, 800, 1800) },
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const icon = (g: string) => g === 'good' ? '✓' : g === 'needs-improvement' ? '△' : '✗';
+
+    const lines = [
+      '[Core Web Vitals]',
+      `  ${icon(data.lcp.grade)} LCP: ${data.lcp.value}ms (${data.lcp.grade}) — target ≤2500ms`,
+      `  ${icon(data.fcp.grade)} FCP: ${data.fcp.value}ms (${data.fcp.grade}) — target ≤1800ms`,
+      `  ${icon(data.cls.grade)} CLS: ${data.cls.value} (${data.cls.grade}) — target ≤0.1`,
+      `  ${icon(data.ttfb.grade)} TTFB: ${data.ttfb.value}ms (${data.ttfb.grade}) — target ≤800ms`,
+    ];
+
+    const allGood = [data.lcp, data.fcp, data.cls, data.ttfb].every(v => v.grade === 'good');
+    if (allGood) lines.push('', '  All vitals pass Google thresholds!');
 
     return textResult(lines.join('\n'));
   }
