@@ -248,4 +248,76 @@ describe('AlyBrowserMCPServer', () => {
     // other session should remain
     expect((mcp as any).lastUrlPerTab.has('other:0')).toBe(true);
   });
+
+  // ── handleTool error paths (no session) ─────────────────────
+
+  it('browser_navigate throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_navigate', { url: 'https://x.com' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_click throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_click', { ref: '@e0' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_type throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_type', { ref: '@e0', text: 'hi' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_tab_list throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_tab_list', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_cookie_get throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_cookie_get', { url: 'https://x.com' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_download throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_download', { url: 'https://x.com/file' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_eval throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_eval', { expression: '1+1' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_upload throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_upload', { filePath: '/tmp/x' })).rejects.toThrow('No browser session');
+  });
+
+  it('browser_frame_list throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_frame_list', {})).rejects.toThrow('No browser session');
+  });
+
+  it('browser_history_search throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_history_search', {})).rejects.toThrow('No browser session');
+  });
+
+  // ── Auto-learn utilities ────────────────────────────────────
+
+  it('recordFailure and recordRecovery track per-domain', () => {
+    const mcp = create();
+    (mcp as any).recordFailure('https://example.com/page', 'browser_click', 'element not found');
+    const failures = (mcp as any).recentFailures.get('example.com');
+    expect(failures).toBeDefined();
+    expect(failures.has('browser_click')).toBe(true);
+
+    (mcp as any).recordRecovery('https://example.com/page', 'browser_click', 'ref=@e1');
+    expect(failures.has('browser_click')).toBe(false);
+  });
+
+  it('recordRecovery ignores tools without prior failure', () => {
+    const mcp = create();
+    // No failure recorded — recovery should be a no-op
+    (mcp as any).recordRecovery('https://test.com', 'browser_type', 'ref=@e0');
+    expect((mcp as any).recentFailures.has('test.com')).toBe(false);
+  });
 });
