@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { AlyBrowserMCPServer } from '../../src/mcp/server';
 import { tools } from '../../src/mcp/tools';
+import { ExtensionBridge } from '../../src/extension/bridge';
 
 describe('AlyBrowserMCPServer', () => {
   const instances: AlyBrowserMCPServer[] = [];
@@ -973,6 +974,213 @@ describe('AlyBrowserMCPServer', () => {
       const frames = JSON.parse(result.content[0].text);
       expect(frames).toHaveLength(1);
       expect(frames[0].depth).toBe(0);
+    });
+  });
+
+  // ── Mock Bridge Scenario Tests ──────────────────────────────
+  describe('with mock bridge (browser scenarios)', () => {
+    function createMockBridge(): ExtensionBridge {
+      const bridge = Object.create(ExtensionBridge.prototype) as ExtensionBridge;
+      // Override getters with plain properties via defineProperty
+      Object.defineProperty(bridge, 'ws', { value: { readyState: 1 }, writable: true });
+      Object.defineProperty(bridge, 'isConnected', { get: () => true });
+      Object.defineProperty(bridge, 'sessionId', { get: () => 'mock-session' });
+      Object.defineProperty(bridge, 'port', { get: () => 12345 });
+
+      bridge.send = vi.fn().mockImplementation(async (action: string, params?: Record<string, unknown>) => {
+        switch (action) {
+          case 'snapshot':
+            return '[page] Example\n  [@e1] button "Login"\n  [@e2] input "Email"\n  [@e3] link "Help"';
+          case 'click':
+            return undefined;
+          case 'type':
+            return undefined;
+          case 'navigate':
+            return undefined;
+          case 'evaluate':
+            return JSON.stringify({ result: 42 });
+          case 'select':
+            return undefined;
+          case 'hover':
+            return undefined;
+          case 'tabs':
+            return [{ id: 1, title: 'Example', url: 'https://example.com', active: true }];
+          case 'frames':
+            return [{ frameId: 0, url: 'https://example.com', name: '' }];
+          case 'cookies':
+            return [{ name: 'sid', value: 'abc', domain: '.example.com' }];
+          case 'html':
+            return '<html><body><h1>Hello</h1></body></html>';
+          default:
+            return undefined;
+        }
+      });
+
+      const snapshotText = '[page] Example\n  [@e1] button "Login"\n  [@e2] input "Email"\n  [@e3] link "Help"';
+      bridge.snapshot = vi.fn().mockResolvedValue(snapshotText);
+      bridge.click = vi.fn().mockResolvedValue(undefined);
+      bridge.type = vi.fn().mockResolvedValue(undefined);
+      bridge.navigate = vi.fn().mockResolvedValue(undefined);
+      bridge.evaluate = vi.fn().mockResolvedValue(JSON.stringify({ result: 42 }));
+      bridge.selectOption = vi.fn().mockResolvedValue(undefined);
+      bridge.hover = vi.fn().mockResolvedValue(undefined);
+      bridge.close = vi.fn().mockResolvedValue(undefined);
+      // Methods used by specific handlers
+      (bridge as any).getHTML = vi.fn().mockResolvedValue('<html><body><h1>Hello</h1></body></html>');
+      (bridge as any).tabList = vi.fn().mockResolvedValue([
+        { id: 1, title: 'Example', url: 'https://example.com', active: true },
+      ]);
+      (bridge as any).tabNew = vi.fn().mockResolvedValue({ id: 2, url: 'about:blank' });
+      (bridge as any).tabClose = vi.fn().mockResolvedValue(undefined);
+      (bridge as any).tabSwitch = vi.fn().mockResolvedValue(undefined);
+      (bridge as any).cookieGet = vi.fn().mockResolvedValue([
+        { name: 'sid', value: 'abc', domain: '.example.com' },
+      ]);
+      (bridge as any).cookieSet = vi.fn().mockResolvedValue(undefined);
+      (bridge as any).cookieDelete = vi.fn().mockResolvedValue(undefined);
+      (bridge as any).frameList = vi.fn().mockResolvedValue([
+        { frameId: 0, parentFrameId: -1, url: 'https://example.com' },
+      ]);
+
+      return bridge;
+    }
+
+    function injectMockBridge(mcp: AlyBrowserMCPServer, sessionId = 'default'): ExtensionBridge {
+      const bridge = createMockBridge();
+      (mcp as any).sessions.set(sessionId, bridge);
+      return bridge;
+    }
+
+    it('snapshot returns accessibility tree', async () => {
+      const mcp = create();
+      injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_snapshot', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('@e1');
+      expect(result.content[0].text).toContain('Login');
+    });
+
+    it('click + snapshot flow', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_click', { ref: '@e1' });
+      expect(result.isError).toBeFalsy();
+      expect(bridge.click).toHaveBeenCalledWith('@e1', undefined, undefined);
+      expect(bridge.snapshot).toHaveBeenCalled();
+      expect(result.content[0].text).toContain('Clicked @e1');
+    });
+
+    it('type into input field', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_type', {
+        ref: '@e2', text: 'user@example.com',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(bridge.type).toHaveBeenCalledWith(
+        '@e2', 'user@example.com',
+        expect.objectContaining({ clear: false }),
+      );
+      expect(result.content[0].text).toContain('Typed');
+    });
+
+    it('eval returns JavaScript result', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_eval', {
+        expression: 'document.title',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(bridge.evaluate).toHaveBeenCalledWith('document.title', undefined);
+    });
+
+    it('html returns page source', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_html', {});
+      expect(result.isError).toBeFalsy();
+      expect((bridge as any).getHTML).toHaveBeenCalled();
+      expect(result.content[0].text).toContain('<html>');
+    });
+
+    it('tab_list returns tabs', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_tab_list', {});
+      expect(result.isError).toBeFalsy();
+      expect((bridge as any).tabList).toHaveBeenCalled();
+    });
+
+    it('frame_list returns frames with depth', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_frame_list', {});
+      expect(result.isError).toBeFalsy();
+      expect((bridge as any).frameList).toHaveBeenCalled();
+      const frames = JSON.parse(result.content[0].text);
+      expect(frames[0].depth).toBe(0);
+    });
+
+    it('cookie_get returns cookies', async () => {
+      const mcp = create();
+      const bridge = injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_cookie_get', {
+        url: 'https://example.com',
+      });
+      expect(result.isError).toBeFalsy();
+      expect((bridge as any).cookieGet).toHaveBeenCalledWith('https://example.com', undefined);
+    });
+
+    it('multi-session: tools route to correct bridge', async () => {
+      const mcp = create();
+      const bridgeA = injectMockBridge(mcp, 'session-a');
+      const bridgeB = injectMockBridge(mcp, 'session-b');
+
+      await (mcp as any).handleTool('browser_snapshot', { sessionId: 'session-a' });
+      expect(bridgeA.snapshot).toHaveBeenCalled();
+      expect(bridgeB.snapshot).not.toHaveBeenCalled();
+
+      vi.clearAllMocks();
+
+      await (mcp as any).handleTool('browser_snapshot', { sessionId: 'session-b' });
+      expect(bridgeB.snapshot).toHaveBeenCalled();
+      expect(bridgeA.snapshot).not.toHaveBeenCalled();
+    });
+
+    it('close removes session from map', async () => {
+      const mcp = create();
+      injectMockBridge(mcp);
+
+      expect((mcp as any).sessions.has('default')).toBe(true);
+      await (mcp as any).handleTool('browser_close', {});
+      expect((mcp as any).sessions.has('default')).toBe(false);
+    });
+
+    it('session_list shows active mock session', async () => {
+      const mcp = create();
+      injectMockBridge(mcp);
+
+      const result = await (mcp as any).handleTool('browser_session_list', {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('default');
+    });
+
+    it('sleep returns after ~1 second', async () => {
+      const mcp = create();
+      injectMockBridge(mcp);
+
+      const start = Date.now();
+      const result = await (mcp as any).handleTool('browser_sleep', {});
+      expect(Date.now() - start).toBeGreaterThanOrEqual(900);
+      expect(result.content[0].text).toContain('1 second');
     });
   });
 });
