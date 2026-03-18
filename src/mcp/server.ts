@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Infinite Scroll
+      case 'browser_infinite_scroll':
+        return this.handleInfiniteScroll(args);
+
       // Shadow DOM Pierce
       case 'browser_shadow_dom_pierce':
         return this.handleShadowDomPierce(args);
@@ -1046,6 +1050,49 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Infinite Scroll ──────────────────────────────────────
+
+  private async handleInfiniteScroll(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const maxScrolls = (args.maxScrolls as number) ?? 10;
+    const waitMs = (args.waitMs as number) ?? 1500;
+
+    const result = await bridge.evaluate(`(async () => {
+      const max = ${maxScrolls};
+      const wait = ${waitMs};
+      const log = [];
+      let prevHeight = document.documentElement.scrollHeight;
+      let prevElements = document.querySelectorAll('*').length;
+
+      for (let i = 0; i < max; i++) {
+        window.scrollTo(0, document.documentElement.scrollHeight);
+        await new Promise(r => setTimeout(r, wait));
+        const newHeight = document.documentElement.scrollHeight;
+        const newElements = document.querySelectorAll('*').length;
+        const added = newElements - prevElements;
+        log.push({ scroll: i + 1, height: newHeight, elements: newElements, added });
+        if (newHeight === prevHeight && added === 0) break;
+        prevHeight = newHeight;
+        prevElements = newElements;
+      }
+
+      return JSON.stringify({
+        scrolls: log.length,
+        finalHeight: document.documentElement.scrollHeight,
+        totalElements: document.querySelectorAll('*').length,
+        log,
+      });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const lines = [`[Infinite Scroll] ${data.scrolls} scrolls, ${data.totalElements} elements, ${data.finalHeight}px`];
+    for (const s of data.log) {
+      lines.push(`  #${s.scroll}: +${s.added} elements, ${s.height}px`);
+    }
     return textResult(lines.join('\n'));
   }
 

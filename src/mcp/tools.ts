@@ -563,6 +563,23 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Infinite Scroll ──────────────────────────────────────
+  {
+    name: 'browser_infinite_scroll',
+    description:
+      'Auto-scroll to load all content on infinite scroll pages. Scrolls to bottom repeatedly ' +
+      'until no new content loads or max iterations reached. Reports items loaded per scroll.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        maxScrolls: { type: 'number', description: 'Max scroll iterations (default: 10)' },
+        waitMs: { type: 'number', description: 'Wait between scrolls in ms (default: 1500)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Shadow DOM Pierce ────────────────────────────────────
   {
     name: 'browser_shadow_dom_pierce',

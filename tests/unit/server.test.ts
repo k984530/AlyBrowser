@@ -443,6 +443,11 @@ describe('AlyBrowserMCPServer', () => {
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
   });
 
+  it('browser_infinite_scroll throws without session', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_infinite_scroll', {})).rejects.toThrow('No browser session');
+  });
+
   it('browser_shadow_dom_pierce requires path', async () => {
     const mcp = create();
     await expect((mcp as any).handleTool('browser_shadow_dom_pierce', {})).rejects.toThrow('"path" must be a non-empty string');
