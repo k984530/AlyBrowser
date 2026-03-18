@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0] - 2026-03-18
+
+### Added
+- **`screenshot-compare`**: Pixel-level screenshot comparison (hash + byte similarity %)
+- **`PageWatcher`**: Page change monitoring with snapshot diff
+- Visual regression testing foundation (3 modules: snapshot-diff + page-watch + screenshot-compare)
+- 451 tests, 60 MCP tools
+
 ## [1.3.0] - 2026-03-18
 
 ### Added
