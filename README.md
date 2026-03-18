@@ -1,5 +1,9 @@
 # AlyBrowser
 
+[![npm version](https://img.shields.io/npm/v/aly-browser)](https://www.npmjs.com/package/aly-browser)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
+
 Lightweight browser SDK for AI agents. Connects via a Chrome Extension bridge that bypasses bot detection.
 
 ## How it works
@@ -243,11 +247,21 @@ Chrome crashes are auto-detected and recovered:
 - Profile directory is reused — cookies, localStorage, IndexedDB are preserved
 - `close()` sets an intentional flag to skip recovery
 
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ALY_REQUIRE_AUTH` | (unset) | Set to `1` to reject WS connections without a valid JWT token |
+
 ## Requirements
 
 - Node.js >= 18
 - Chrome or Chromium installed
 - macOS, Linux (screen tools are macOS-only)
+
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for version history.
 
 ## License
 
