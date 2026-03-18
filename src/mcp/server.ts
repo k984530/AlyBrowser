@@ -301,6 +301,13 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Media List
+      case 'browser_media_list':
+        return this.handleMediaList(args);
+      // XPath Query
+      case 'browser_xpath_query':
+        return this.handleXpathQuery(args);
+
       // Social Preview
       case 'browser_open_graph_preview':
         return this.handleOpenGraphPreview(args);
@@ -1110,6 +1117,72 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Media List ───────────────────────────────────────────
+
+  private async handleMediaList(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      const media = [];
+      document.querySelectorAll('video,audio,embed,object,source').forEach(el => {
+        const tag = el.tagName.toLowerCase();
+        media.push({
+          tag,
+          src: (el.src || el.getAttribute('data') || el.getAttribute('src') || '').slice(0, 120),
+          type: el.type || el.getAttribute('type') || '',
+          width: el.width || el.videoWidth || 0,
+          height: el.height || el.videoHeight || 0,
+          autoplay: el.autoplay || false,
+          duration: el.duration || 0,
+          paused: el.paused ?? null,
+        });
+      });
+      return JSON.stringify({ count: media.length, media: media.slice(0, 20) });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    if (data.count === 0) return textResult('[Media] No media elements found.');
+    const lines = [`[Media] ${data.count} element(s)`];
+    for (const m of data.media) {
+      const size = m.width ? `${m.width}x${m.height}` : '';
+      const dur = m.duration ? `${Math.round(m.duration)}s` : '';
+      lines.push(`  <${m.tag}> ${size} ${dur} ${m.autoplay ? 'autoplay' : ''} ${m.src.slice(0, 60)}`);
+    }
+    return textResult(lines.join('\n'));
+  }
+
+  // ── XPath Query ─────────────────────────────────────────
+
+  private async handleXpathQuery(args: Record<string, unknown>): Promise<ToolResult> {
+    const xpath = this.requireString(args, 'xpath');
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(() => {
+      try {
+        const iter = document.evaluate(${JSON.stringify(xpath)}, document, null, XPathResult.ORDERED_NODE_ITERATOR_TYPE, null);
+        const nodes = [];
+        let node;
+        while ((node = iter.iterateNext()) && nodes.length < 20) {
+          if (node.nodeType === 1) {
+            nodes.push({ tag: node.tagName.toLowerCase(), id: node.id || null, text: (node.textContent || '').trim().slice(0, 80) });
+          } else {
+            nodes.push({ tag: '#text', text: (node.textContent || '').trim().slice(0, 80) });
+          }
+        }
+        return JSON.stringify({ count: nodes.length, nodes });
+      } catch (e) { return JSON.stringify({ error: e.message }); }
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    if (data.error) return errorResult(`XPath error: ${data.error}`);
+    if (data.count === 0) return textResult(`[XPath] No matches for: ${xpath}`);
+    const lines = [`[XPath] ${data.count} match(es)`];
+    for (const n of data.nodes) lines.push(`  <${n.tag}${n.id ? '#' + n.id : ''}> "${n.text}"`);
     return textResult(lines.join('\n'));
   }
 

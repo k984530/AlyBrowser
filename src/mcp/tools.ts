@@ -563,6 +563,34 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Media List ───────────────────────────────────────────
+  {
+    name: 'browser_media_list',
+    description:
+      'List all media elements (video, audio, embed, object) on the page with src, type, ' +
+      'dimensions, autoplay status, and duration.',
+    inputSchema: {
+      type: 'object',
+      properties: { ...tabIdProp, ...sessionIdProp },
+    },
+  },
+  // ── XPath Query ─────────────────────────────────────────
+  {
+    name: 'browser_xpath_query',
+    description:
+      'Query elements using XPath expressions. More powerful than CSS selectors for complex ' +
+      'queries like "find text containing X" or "find nth sibling". Returns matching elements.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        xpath: { type: 'string', description: 'XPath expression (e.g., "//h2[contains(text(),\\"Price\\")]")' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+      required: ['xpath'],
+    },
+  },
+
   // ── Social Preview ───────────────────────────────────────
   {
     name: 'browser_open_graph_preview',
