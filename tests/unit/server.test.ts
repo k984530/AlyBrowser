@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { AlyBrowserMCPServer } from '../../src/mcp/server';
 import { tools } from '../../src/mcp/tools';
 
@@ -441,5 +441,73 @@ describe('AlyBrowserMCPServer', () => {
   it('browser_clipboard_write throws without session', async () => {
     const mcp = create();
     await expect((mcp as any).handleTool('browser_clipboard_write', { text: 'x' })).rejects.toThrow('No browser session');
+  });
+
+  // ── Frame depth calculation ──────────────────────────────────
+
+  describe('handleFrameList depth computation', () => {
+    function createMcpWithMockBridge() {
+      const mcp = create();
+      const mockBridge = {
+        isConnected: true,
+        frameList: vi.fn(),
+      };
+      (mcp as any).sessions.set('default', mockBridge);
+      return { mcp, mockBridge };
+    }
+
+    it('adds depth field to flat frame list', async () => {
+      const { mcp, mockBridge } = createMcpWithMockBridge();
+      mockBridge.frameList.mockResolvedValue([
+        { frameId: 0, parentFrameId: -1, url: 'https://main.com' },
+        { frameId: 1, parentFrameId: 0, url: 'https://child.com' },
+        { frameId: 2, parentFrameId: 1, url: 'https://grandchild.com' },
+      ]);
+
+      const result = await (mcp as any).handleFrameList({});
+      const frames = JSON.parse(result.content[0].text);
+      expect(frames).toHaveLength(3);
+      expect(frames[0].depth).toBe(0); // main
+      expect(frames[1].depth).toBe(1); // child
+      expect(frames[2].depth).toBe(2); // grandchild
+    });
+
+    it('filters frames by maxDepth', async () => {
+      const { mcp, mockBridge } = createMcpWithMockBridge();
+      mockBridge.frameList.mockResolvedValue([
+        { frameId: 0, parentFrameId: -1, url: 'https://main.com' },
+        { frameId: 1, parentFrameId: 0, url: 'https://child.com' },
+        { frameId: 2, parentFrameId: 1, url: 'https://grandchild.com' },
+        { frameId: 3, parentFrameId: 2, url: 'https://deep.com' },
+      ]);
+
+      const result = await (mcp as any).handleFrameList({ depth: 2 });
+      const frames = JSON.parse(result.content[0].text);
+      expect(frames).toHaveLength(3); // depth 0, 1, 2 — excludes depth 3
+      expect(frames.every((f: any) => f.depth <= 2)).toBe(true);
+    });
+
+    it('defaults to depth 10 when not specified', async () => {
+      const { mcp, mockBridge } = createMcpWithMockBridge();
+      mockBridge.frameList.mockResolvedValue([
+        { frameId: 0, parentFrameId: -1, url: 'https://main.com' },
+      ]);
+
+      const result = await (mcp as any).handleFrameList({});
+      const frames = JSON.parse(result.content[0].text);
+      expect(frames).toHaveLength(1);
+    });
+
+    it('handles single main frame', async () => {
+      const { mcp, mockBridge } = createMcpWithMockBridge();
+      mockBridge.frameList.mockResolvedValue([
+        { frameId: 0, parentFrameId: -1, url: 'https://noframes.com' },
+      ]);
+
+      const result = await (mcp as any).handleFrameList({});
+      const frames = JSON.parse(result.content[0].text);
+      expect(frames).toHaveLength(1);
+      expect(frames[0].depth).toBe(0);
+    });
   });
 });
