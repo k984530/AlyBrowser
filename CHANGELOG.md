@@ -4,10 +4,13 @@
 
 ### Added
 - **`browser_permissions_check`**: Query browser permission states (geolocation, camera, mic, clipboard, notifications)
-- README.md updated: 49 → 124 tools across 29 categories
+- **`browser_websocket_monitor`**: Monitor WebSocket connections — capture send/recv messages with credential masking (JWT, passwords, API keys)
+- README.md updated: 49 → 125 tools across 29 categories
 - Tool integrity tests: tools↔handler sync verification via source parsing
+- Mock bridge scenario tests: click, type, eval, html, tabs, cookies, multi-session routing
 - MCP E2E protocol tests: unknown tool, parallel calls, schema validation, sequential lifecycle
-- 124 MCP tools, 562 tests
+- Coverage threshold achieved: 68% → 71% lines
+- 125 MCP tools, 590 tests
 
 ## [3.0.0] - 2026-03-18
 

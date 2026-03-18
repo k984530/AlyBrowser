@@ -73,7 +73,7 @@ await sessionB.launch({ url: 'https://instagram.com' });
 // Each has independent login state
 ```
 
-## MCP Tools (124)
+## MCP Tools (125)
 
 ### Browser Control (5)
 
@@ -240,7 +240,7 @@ await sessionB.launch({ url: 'https://instagram.com' });
 |------|-------------|
 | `browser_a11y_audit` | WCAG audit: alt text, labels, heading hierarchy, ARIA roles, contrast. |
 
-### Debugging (5)
+### Debugging (6)
 
 | Tool | Description |
 |------|-------------|
@@ -249,6 +249,7 @@ await sessionB.launch({ url: 'https://instagram.com' });
 | `browser_dom_observe` | Start/read/stop MutationObserver for DOM changes. |
 | `browser_event_listener_list` | List event listeners on page elements. |
 | `browser_xpath_query` | Query elements using XPath expressions. |
+| `browser_websocket_monitor` | Monitor WebSocket connections: capture send/recv messages. |
 
 ### Testing & Emulation (7)
 
