@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.0] - 2026-03-18
+
+### Added
+- **`browser_console_log`**: Capture JS console messages with level filter + uncaught errors
+- **`browser_network_log`**: Capture network requests via Performance API with URL filter
+- **`browser_meta_seo`**: Comprehensive SEO metadata analysis (title/OG/Twitter/JSON-LD/headings)
+- **`browser_element_info`**: CSS selector-based element inspector (bounds/styles/attributes)
+- **`PageWatcher`**: Page change monitoring module with snapshot diff
+- 58 MCP tools, 438 tests
+
 ## [1.1.0] - 2026-03-18
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "aly-browser",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Lightweight browser SDK for AI agents — accessibility tree snapshots with @eN ref IDs via Chrome Extension bridge",
   "type": "module",
   "main": "./dist/index.cjs",
