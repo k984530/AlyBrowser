@@ -1172,5 +1172,49 @@ describe('ExtensionBridge', () => {
       const unlinkCalls = mockedFs.unlinkSync.mock.calls.map(c => String(c[0]));
       expect(unlinkCalls.some(p => p.endsWith('token'))).toBe(true);
     });
+
+    it('rejects token-less connection when ALY_REQUIRE_AUTH=1', async () => {
+      process.env.ALY_REQUIRE_AUTH = '1';
+      try {
+        const bridge = new ExtensionBridge('auth-require');
+        const launchPromise = bridge.launch();
+        await vi.advanceTimersByTimeAsync(1);
+
+        const wss = getLatestWss();
+        const ws = new MockWebSocket();
+        // No token in request
+        wss.emit('connection', ws, mockReq('/'));
+        // Should be rejected
+        expect(ws.close).toHaveBeenCalledWith(4001, 'Unauthorized');
+        expect(bridge.isConnected).toBe(false);
+
+        // Connect with valid token to complete
+        const ws2 = new MockWebSocket();
+        wss.emit('connection', ws2, mockReq(`/?token=${bridge.token}`));
+        ws2.emit('message', Buffer.from(JSON.stringify({ type: 'ready', tabId: 1 })));
+        await vi.advanceTimersByTimeAsync(1);
+        await launchPromise;
+      } finally {
+        delete process.env.ALY_REQUIRE_AUTH;
+      }
+    });
+
+    it('allows token-less connection when ALY_REQUIRE_AUTH is not set', async () => {
+      delete process.env.ALY_REQUIRE_AUTH;
+      const bridge = new ExtensionBridge('auth-default');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+
+      const wss = getLatestWss();
+      const ws = new MockWebSocket();
+      wss.emit('connection', ws, mockReq('/'));
+      // Should NOT be rejected
+      expect(ws.close).not.toHaveBeenCalled();
+      ws.emit('message', Buffer.from(JSON.stringify({ type: 'ready', tabId: 1 })));
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+
+      expect(bridge.isConnected).toBe(true);
+    });
   });
 });

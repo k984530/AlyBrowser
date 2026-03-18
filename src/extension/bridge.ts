@@ -145,12 +145,16 @@ export class ExtensionBridge {
 
   /** Validate the auth token from a WS upgrade request. Returns true if valid or auth is not enforced. */
   private validateWsToken(req?: IncomingMessage): boolean {
+    const requireAuth = process.env.ALY_REQUIRE_AUTH === '1';
     try {
       const url = new URL(req?.url || '', `http://localhost:${this._port}`);
       const token = url.searchParams.get('token');
       if (!token) {
-        // No token provided — accept with warning (for pre-installed extensions)
-        log.warn('WS connection without auth token — consider using Chrome for Testing or configuring the extension');
+        if (requireAuth) {
+          log.warn('WS connection rejected — ALY_REQUIRE_AUTH=1 requires token');
+          return false;
+        }
+        log.warn('WS connection without auth token — set ALY_REQUIRE_AUTH=1 to enforce, or use Chrome for Testing');
         return true;
       }
       verifyJwt(token, this._secret);
