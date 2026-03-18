@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // User Agent
+      case 'browser_user_agent_set':
+        return this.handleUserAgentSet(args);
+
       // Geolocation Mock
       case 'browser_geolocation_mock':
         return this.handleGeolocationMock(args);
@@ -1063,6 +1067,31 @@ export class AlyBrowserMCPServer {
     ];
 
     return textResult(lines.join('\n'));
+  }
+
+  // ── User Agent ───────────────────────────────────────────
+
+  private async handleUserAgentSet(args: Record<string, unknown>): Promise<ToolResult> {
+    const presets: Record<string, string> = {
+      'mobile-chrome': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+      'mobile-safari': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+      'desktop-firefox': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+      'googlebot': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+    };
+
+    const custom = args.custom as string | undefined;
+    const preset = args.preset as string | undefined;
+    const ua = custom || (preset ? presets[preset] : undefined);
+
+    if (!ua) return errorResult('Provide a preset or custom UA string');
+
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    await bridge.evaluate(`Object.defineProperty(navigator, 'userAgent', { get: () => ${JSON.stringify(ua)}, configurable: true })`, tabId);
+
+    const label = custom ? 'custom' : preset!;
+    return textResult(`[User Agent] Set to ${label}: ${ua.slice(0, 80)}...`);
   }
 
   // ── Geolocation Mock ─────────────────────────────────────

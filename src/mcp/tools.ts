@@ -563,6 +563,23 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── User Agent ───────────────────────────────────────────
+  {
+    name: 'browser_user_agent_set',
+    description:
+      'Override navigator.userAgent to emulate different browsers/devices. ' +
+      'Presets: mobile-chrome, mobile-safari, desktop-firefox, googlebot, or custom string.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        preset: { type: 'string', enum: ['mobile-chrome', 'mobile-safari', 'desktop-firefox', 'googlebot'], description: 'Preset UA string' },
+        custom: { type: 'string', description: 'Custom UA string (overrides preset)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Geolocation Mock ─────────────────────────────────────
   {
     name: 'browser_geolocation_mock',
