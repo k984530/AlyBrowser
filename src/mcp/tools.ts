@@ -563,6 +563,23 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Popup Blocker ─────────────────────────────────────────
+  {
+    name: 'browser_popup_blocker',
+    description:
+      'Detect and remove popups, modals, overlays, and cookie banners that block page interaction. ' +
+      'Identifies fixed/sticky positioned elements with high z-index covering the viewport. ' +
+      'Actions: "detect" (list blocking elements), "remove" (auto-remove detected blockers).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['detect', 'remove'], description: 'detect (default) or remove' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Find Text ─────────────────────────────────────────────
   {
     name: 'browser_find_text',

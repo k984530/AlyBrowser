@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Popup Blocker
+      case 'browser_popup_blocker':
+        return this.handlePopupBlocker(args);
+
       // Find Text
       case 'browser_find_text':
         return this.handleFindText(args);
@@ -983,6 +987,70 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Popup Blocker ─────────────────────────────────────────
+
+  private async handlePopupBlocker(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const action = (args.action as string) || 'detect';
+
+    const result = await bridge.evaluate(`(() => {
+      const action = ${JSON.stringify(action)};
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const blockers = [];
+
+      document.querySelectorAll('*').forEach(el => {
+        const cs = getComputedStyle(el);
+        const pos = cs.position;
+        if (pos !== 'fixed' && pos !== 'sticky') return;
+        const z = parseInt(cs.zIndex) || 0;
+        if (z < 100) return;
+        const rect = el.getBoundingClientRect();
+        const coversPct = (rect.width * rect.height) / (vw * vh) * 100;
+        if (coversPct < 20) return;
+
+        const tag = el.tagName.toLowerCase();
+        const id = el.id || null;
+        const cls = (el.className || '').toString().slice(0, 50);
+        const text = (el.textContent || '').trim().slice(0, 80);
+        const isCookie = text.toLowerCase().match(/cookie|consent|gdpr|accept|privacy/);
+        const isModal = cls.match(/modal|overlay|popup|dialog|banner/i) || tag === 'dialog';
+
+        blockers.push({
+          tag, id, class: cls,
+          type: isCookie ? 'cookie-banner' : isModal ? 'modal/overlay' : 'fixed-overlay',
+          zIndex: z, coversPct: Math.round(coversPct),
+          text: text.slice(0, 60),
+          selector: id ? '#' + id : (cls ? '.' + cls.split(' ')[0] : tag),
+        });
+      });
+
+      if (action === 'remove' && blockers.length > 0) {
+        blockers.forEach(b => {
+          const sel = b.id ? '#' + b.id : b.class ? '.' + b.class.split(' ')[0] : null;
+          if (sel) { const el = document.querySelector(sel); if (el) el.remove(); }
+        });
+        document.body.style.overflow = 'auto';
+        document.documentElement.style.overflow = 'auto';
+      }
+
+      return JSON.stringify({ action, found: blockers.length, blockers });
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+
+    if (data.found === 0) return textResult('[Popup Blocker] No blocking overlays detected.');
+
+    const verb = action === 'remove' ? 'Removed' : 'Detected';
+    const lines = [`[Popup Blocker] ${verb} ${data.found} blocker(s)`];
+    for (const b of data.blockers) {
+      lines.push(`  [${b.type}] ${b.selector} z:${b.zIndex} covers:${b.coversPct}% "${b.text}"`);
+    }
+    if (action === 'remove') lines.push('  Body overflow restored to auto.');
     return textResult(lines.join('\n'));
   }
 
