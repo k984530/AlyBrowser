@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Service Worker
+      case 'browser_service_worker_info':
+        return this.handleServiceWorkerInfo(args);
+
       // Resource Hints
       case 'browser_resource_hints':
         return this.handleResourceHints(args);
@@ -1121,6 +1125,46 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Service Worker ───────────────────────────────────────
+
+  private async handleServiceWorkerInfo(args: Record<string, unknown>): Promise<ToolResult> {
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    const result = await bridge.evaluate(`(async () => {
+      if (!('serviceWorker' in navigator)) return JSON.stringify({ supported: false });
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (!reg) return JSON.stringify({ supported: true, registered: false });
+
+        const cacheNames = await caches.keys().catch(() => []);
+        return JSON.stringify({
+          supported: true, registered: true,
+          scope: reg.scope,
+          scriptURL: reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '',
+          state: reg.active ? 'active' : reg.installing ? 'installing' : reg.waiting ? 'waiting' : 'unknown',
+          updateViaCache: reg.updateViaCache,
+          caches: cacheNames.slice(0, 10),
+          cacheCount: cacheNames.length,
+        });
+      } catch (e) { return JSON.stringify({ supported: true, error: e.message }); }
+    })()`, tabId);
+
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    if (!data.supported) return textResult('[Service Worker] Not supported in this context.');
+    if (data.error) return textResult(`[Service Worker] Error: ${data.error}`);
+    if (!data.registered) return textResult('[Service Worker] No Service Worker registered.');
+
+    const lines = [
+      `[Service Worker] ${data.state}`,
+      `  Script: ${data.scriptURL.slice(0, 80)}`,
+      `  Scope: ${data.scope}`,
+      `  Update: ${data.updateViaCache}`,
+      `  Caches: ${data.cacheCount} (${data.caches.join(', ')})`,
+    ];
     return textResult(lines.join('\n'));
   }
 

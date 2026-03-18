@@ -563,6 +563,18 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Service Worker ───────────────────────────────────────
+  {
+    name: 'browser_service_worker_info',
+    description:
+      'Check Service Worker registration status: active/installing/waiting workers, ' +
+      'scope, script URL, and cache names. Useful for debugging PWA issues.',
+    inputSchema: {
+      type: 'object',
+      properties: { ...tabIdProp, ...sessionIdProp },
+    },
+  },
+
   // ── Resource Hints ───────────────────────────────────────
   {
     name: 'browser_resource_hints',
