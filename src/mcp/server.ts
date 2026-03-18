@@ -301,6 +301,10 @@ export class AlyBrowserMCPServer {
       case 'browser_perf_metrics':
         return this.handlePerfMetrics(args);
 
+      // Device Emulate
+      case 'browser_device_emulate':
+        return this.handleDeviceEmulate(args);
+
       // Timezone
       case 'browser_timezone_set':
         return this.handleTimezoneSet(args);
@@ -1070,6 +1074,53 @@ export class AlyBrowserMCPServer {
       `  Transfer Size: ${(data.resources.totalSize / 1024).toFixed(1)} KB`,
     ];
 
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Device Emulate ───────────────────────────────────────
+
+  private async handleDeviceEmulate(args: Record<string, unknown>): Promise<ToolResult> {
+    const devices: Record<string, { w: number; h: number; ua: string; touch: boolean; dpr: number }> = {
+      'iphone-14': { w: 390, h: 844, ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1', touch: true, dpr: 3 },
+      'pixel-7': { w: 412, h: 915, ua: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36', touch: true, dpr: 2.625 },
+      'ipad': { w: 820, h: 1180, ua: 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1', touch: true, dpr: 2 },
+      'desktop-1080p': { w: 1920, h: 1080, ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', touch: false, dpr: 1 },
+    };
+
+    const preset = args.preset as string | undefined;
+    const dev = preset ? devices[preset] : undefined;
+    const w = (args.width as number) ?? dev?.w;
+    const h = (args.height as number) ?? dev?.h;
+    const ua = (args.userAgent as string) ?? dev?.ua;
+    const touch = (args.touch as boolean) ?? dev?.touch ?? false;
+    const dpr = (args.dpr as number) ?? dev?.dpr ?? 1;
+
+    if (!w || !h) return errorResult('Provide a preset or width+height');
+
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+
+    await bridge.evaluate(`(() => {
+      // UA
+      ${ua ? `Object.defineProperty(navigator, 'userAgent', { get: () => ${JSON.stringify(ua)}, configurable: true });` : ''}
+      // Touch
+      ${touch ? `Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 5, configurable: true });` : ''}
+      // DPR
+      Object.defineProperty(window, 'devicePixelRatio', { get: () => ${dpr}, configurable: true });
+      // Viewport resize
+      window.resizeTo(${w}, ${h});
+    })()`, tabId);
+
+    await new Promise((r) => setTimeout(r, 300));
+
+    const label = preset || `${w}x${h}`;
+    const lines = [
+      `[Device Emulate] ${label}`,
+      `  Viewport: ${w}x${h}`,
+      `  DPR: ${dpr}`,
+      `  Touch: ${touch}`,
+      ua ? `  UA: ${ua.slice(0, 70)}...` : '',
+    ].filter(Boolean);
     return textResult(lines.join('\n'));
   }
 

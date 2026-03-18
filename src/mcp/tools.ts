@@ -563,6 +563,27 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // ── Device Emulate ───────────────────────────────────────
+  {
+    name: 'browser_device_emulate',
+    description:
+      'Emulate a complete device profile: viewport, user agent, touch support, and DPR in one call. ' +
+      'Presets: iphone-14, pixel-7, ipad, desktop-1080p, or custom.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        preset: { type: 'string', enum: ['iphone-14', 'pixel-7', 'ipad', 'desktop-1080p'], description: 'Device preset' },
+        width: { type: 'number', description: 'Custom viewport width' },
+        height: { type: 'number', description: 'Custom viewport height' },
+        userAgent: { type: 'string', description: 'Custom user agent' },
+        touch: { type: 'boolean', description: 'Enable touch events (default: auto based on preset)' },
+        dpr: { type: 'number', description: 'Device pixel ratio (default: auto based on preset)' },
+        ...tabIdProp,
+        ...sessionIdProp,
+      },
+    },
+  },
+
   // ── Timezone ─────────────────────────────────────────────
   {
     name: 'browser_timezone_set',
