@@ -112,13 +112,17 @@ export class AutoLoginManager {
         const json = this.encryptionKey && !raw.startsWith('[')
           ? decrypt(raw, this.encryptionKey)
           : raw;
-        const arr: LoginCredential[] = JSON.parse(json);
-        for (const cred of arr) {
-          this.credentials.set(cred.domain, cred);
+        const parsed = JSON.parse(json);
+        if (!Array.isArray(parsed)) throw new Error('Credentials file is not an array');
+        for (const cred of parsed as LoginCredential[]) {
+          if (cred.domain) this.credentials.set(cred.domain, cred);
         }
       }
-    } catch {
-      // Corrupted — start fresh
+    } catch (err) {
+      // Corrupted or missing — start fresh. Log for debugging.
+      if (fs.existsSync(fp)) {
+        console.error('[auto-login] Failed to load credentials:', err instanceof Error ? err.message : String(err));
+      }
     }
   }
 

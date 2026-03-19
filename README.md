@@ -327,14 +327,26 @@ await sessionB.launch({ url: 'https://instagram.com' });
 | `browser_clipboard_read` | Read clipboard text. |
 | `browser_clipboard_write` | Write text to clipboard. |
 
-### Sessions (4)
+### Sessions (7)
 
 | Tool | Description |
 |------|-------------|
 | `browser_session_list` | List active sessions with port and connection status. |
 | `browser_session_close_all` | Close all browser sessions. |
 | `browser_session_clone` | Clone session (copies cookies for parallel work). |
+| `browser_session_broadcast` | Execute an action across multiple sessions in parallel (navigate, click, type, eval, scroll, snapshot). |
+| `browser_batch_snapshot` | Capture snapshots from multiple sessions simultaneously. |
+| `browser_screenshot_diff` | Compare screenshots between two sessions for visual regression detection. |
 | `browser_top_sites` | Get most visited sites. |
+
+### Page Watch (4)
+
+| Tool | Description |
+|------|-------------|
+| `browser_watch_start` | Start monitoring a page for changes. Captures initial snapshot for comparison. |
+| `browser_watch_check` | Check a watched page for changes since last check. Returns diff summary. |
+| `browser_watch_list` | List all active page watches with status. |
+| `browser_watch_stop` | Stop monitoring a page and remove the watch. |
 
 ### Screen Tools (5)
 
