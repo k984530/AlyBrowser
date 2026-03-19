@@ -483,7 +483,7 @@ describe('AlyBrowserMCPServer', () => {
     const mcp = create();
     const result = await (mcp as any).handleTool('browser_selector_generator', {});
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('"text" or "selector"');
+    expect(result.content[0].text).toContain('"text"');
   });
 
   it('browser_broken_links throws without session', async () => {
@@ -641,9 +641,7 @@ describe('AlyBrowserMCPServer', () => {
 
   it('browser_drag_drop requires target', async () => {
     const mcp = create();
-    const result = await (mcp as any).handleTool('browser_drag_drop', { source: '.src' });
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('"target" is required');
+    await expect((mcp as any).handleTool('browser_drag_drop', { source: '.src' })).rejects.toThrow('"target" must be a non-empty string');
   });
 
   it('browser_wait_for_url requires pattern', async () => {

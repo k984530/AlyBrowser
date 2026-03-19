@@ -1476,7 +1476,7 @@ export class AlyBrowserMCPServer {
   private async handleSelectorGenerator(args: Record<string, unknown>): Promise<ToolResult> {
     const text = args.text as string | undefined;
     const selector = args.selector as string | undefined;
-    if (!text && !selector) return errorResult('Provide "text" or "selector"');
+    if (!text && !selector) return errorResult('Provide "text" (find element by text content) or "selector" (existing CSS selector to analyze)');
 
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
@@ -2499,8 +2499,7 @@ export class AlyBrowserMCPServer {
 
   private async handleDragDrop(args: Record<string, unknown>): Promise<ToolResult> {
     const source = this.requireString(args, 'source');
-    const target = args.target as string;
-    if (!target) return errorResult('"target" is required');
+    const target = this.requireString(args, 'target');
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
 
@@ -3250,7 +3249,13 @@ export class AlyBrowserMCPServer {
     const bridge = this.ensureConnected(args);
     const cookies = await bridge.cookieGet(url);
     const cookieArr = Array.isArray(cookies) ? cookies : [];
-    return jsonResult({ url, count: cookieArr.length, cookies: cookieArr });
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({ url, count: cookieArr.length, cookies: cookieArr }, null, 2)
+          + '\n\n⚠ Warning: exported cookies may contain sensitive authentication data. Store securely.',
+      }],
+    };
   }
 
   private async handleCookieImport(args: Record<string, unknown>): Promise<ToolResult> {
@@ -3569,6 +3574,7 @@ export class AlyBrowserMCPServer {
     };
 
     const preset = args.preset as string | undefined;
+    if (preset && !presets[preset]) return errorResult(`Invalid preset "${preset}". Use: ${Object.keys(presets).join(', ')}`);
     const width = (args.width as number) ?? (preset ? presets[preset]?.[0] : undefined);
     const height = (args.height as number) ?? (preset ? presets[preset]?.[1] : undefined);
 
