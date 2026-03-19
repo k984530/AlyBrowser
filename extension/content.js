@@ -47,9 +47,14 @@ function buildSnapshot() {
     // Wait for current snapshot to finish, then build a fresh one
     if (!snapshotQueue) {
       snapshotQueue = new Promise((resolve, reject) => {
+        let attempts = 0;
         const check = () => {
           if (!snapshotInProgress) {
             snapshotQueue = null;
+            try { resolve(buildSnapshotInternal()); } catch (e) { reject(e); }
+          } else if (++attempts > 500) { // 5 seconds max wait
+            snapshotQueue = null;
+            snapshotInProgress = false; // Force reset stuck state
             try { resolve(buildSnapshotInternal()); } catch (e) { reject(e); }
           } else {
             setTimeout(check, 10);
