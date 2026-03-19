@@ -1758,4 +1758,206 @@ describe('AlyBrowserMCPServer', () => {
       expect(result.isError).toBeFalsy();
     });
   });
+
+  // ── Site Knowledge ──────────────────────────────────────────
+
+  it('browser_learn requires all string parameters', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_learn', { url: 'https://test.com' })).rejects.toThrow('"action"');
+  });
+
+  it('browser_learn validates result enum', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_learn', {
+      url: 'https://test.com', action: 'click', result: 'maybe', note: 'test',
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Invalid result');
+  });
+
+  it('browser_learn records knowledge successfully', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_learn', {
+      url: 'https://test.com', action: 'click login', result: 'success', note: 'works fine',
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain('Recorded');
+  });
+
+  it('browser_get_knowledge returns error without URL or session', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_get_knowledge', {});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('No URL provided');
+  });
+
+  it('browser_get_knowledge returns empty state for unknown URL', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_get_knowledge', { url: 'https://unknown-site.test' });
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain('No knowledge recorded');
+  });
+
+  // ── Multi-Session Batch Operations ─────────────────────────
+
+  it('browser_batch_snapshot requires non-empty sessionIds', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_batch_snapshot', { sessionIds: [] });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('non-empty array');
+  });
+
+  it('browser_batch_snapshot rejects missing sessionIds', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_batch_snapshot', {});
+    expect(result.isError).toBe(true);
+  });
+
+  it('browser_session_broadcast requires non-empty sessionIds', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_session_broadcast', {
+      sessionIds: [], action: 'navigate', params: {},
+    });
+    expect(result.isError).toBe(true);
+  });
+
+  it('browser_session_broadcast validates action enum', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_session_broadcast', {
+      sessionIds: ['default'], action: 'invalid_action', params: {},
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('must be one of');
+  });
+
+  it('browser_session_broadcast validates navigate requires url', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_session_broadcast', {
+      sessionIds: ['default'], action: 'navigate', params: {},
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('params.url');
+  });
+
+  it('browser_session_broadcast validates type requires ref+text', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_session_broadcast', {
+      sessionIds: ['default'], action: 'type', params: { ref: '@e1' },
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('params.text');
+  });
+
+  it('browser_session_broadcast validates click requires ref', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_session_broadcast', {
+      sessionIds: ['default'], action: 'click', params: {},
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('params.ref');
+  });
+
+  it('browser_session_broadcast validates eval requires expression', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_session_broadcast', {
+      sessionIds: ['default'], action: 'eval', params: {},
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('params.expression');
+  });
+
+  // ── Watch ─────────────────────────────────────────────────
+
+  it('browser_watch_check requires watchId', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_watch_check', {})).rejects.toThrow('"watchId"');
+  });
+
+  it('browser_watch_check returns error for unknown watch', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_watch_check', { watchId: 'nonexistent' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('not found');
+  });
+
+  it('browser_watch_list returns empty state', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_watch_list', {});
+    expect(result.content[0].text).toContain('No active watches');
+  });
+
+  it('browser_watch_stop requires watchId', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_watch_stop', {})).rejects.toThrow('"watchId"');
+  });
+
+  it('browser_watch_stop returns error for unknown watch', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_watch_stop', { watchId: 'nonexistent' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('not found');
+  });
+
+  // ── Screenshot Diff ───────────────────────────────────────
+
+  it('browser_screenshot_diff requires sessionA', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_screenshot_diff', { sessionB: 'b' })).rejects.toThrow('"sessionA"');
+  });
+
+  it('browser_screenshot_diff requires sessionB', async () => {
+    const mcp = create();
+    await expect((mcp as any).handleTool('browser_screenshot_diff', { sessionA: 'a' })).rejects.toThrow('"sessionB"');
+  });
+
+  it('browser_screenshot_diff returns error for disconnected session', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_screenshot_diff', { sessionA: 'a', sessionB: 'b' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('not connected');
+  });
+
+  // ── Action Enum Validation ────────────────────────────────
+
+  it('browser_network_throttle rejects invalid action', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_network_throttle', { action: 'bogus' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('"enable" or "disable"');
+  });
+
+  it('browser_dark_mode rejects invalid action', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_dark_mode', { action: 'bogus' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('"detect"');
+  });
+
+  it('browser_highlight rejects invalid action', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_highlight', { action: 'bogus' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('"add" or "clear"');
+  });
+
+  it('browser_viewport_test rejects invalid preset', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_viewport_test', { preset: 'huge' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Invalid preset');
+  });
+
+  it('browser_websocket_monitor rejects invalid action', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_websocket_monitor', { action: 'bogus' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('"start"');
+  });
+
+  it('browser_fetch_intercept rejects invalid action', async () => {
+    const mcp = create();
+    const result = await (mcp as any).handleTool('browser_fetch_intercept', { action: 'bogus' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('"start"');
+  });
 });

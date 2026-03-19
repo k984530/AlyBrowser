@@ -3490,10 +3490,10 @@ export class AlyBrowserMCPServer {
   // ── Dark Mode ─────────────────────────────────────────────
 
   private async handleDarkMode(args: Record<string, unknown>): Promise<ToolResult> {
-    const bridge = this.ensureConnected(args);
-    const tabId = args.tabId as number | undefined;
     const action = (args.action as string) || 'detect';
     if (!['detect', 'dark', 'light'].includes(action)) return errorResult(`"action" must be "detect", "dark", or "light"`);
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
 
     if (action === 'dark' || action === 'light') {
       // Emulate color scheme by injecting a meta tag + overriding matchMedia
@@ -3561,18 +3561,17 @@ export class AlyBrowserMCPServer {
   // ── Viewport ──────────────────────────────────────────────
 
   private async handleViewportTest(args: Record<string, unknown>): Promise<ToolResult> {
-    const bridge = this.ensureConnected(args);
-    const tabId = args.tabId as number | undefined;
-
     const presets: Record<string, [number, number]> = {
       mobile: [375, 667],
       tablet: [768, 1024],
       desktop: [1280, 720],
       wide: [1920, 1080],
     };
-
     const preset = args.preset as string | undefined;
     if (preset && !presets[preset]) return errorResult(`Invalid preset "${preset}". Use: ${Object.keys(presets).join(', ')}`);
+
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
     const width = (args.width as number) ?? (preset ? presets[preset]?.[0] : undefined);
     const height = (args.height as number) ?? (preset ? presets[preset]?.[1] : undefined);
 
@@ -4600,10 +4599,10 @@ export class AlyBrowserMCPServer {
   // ── WebSocket Monitor ─────────────────────────────────────
 
   private async handleWebSocketMonitor(args: Record<string, unknown>): Promise<ToolResult> {
-    const bridge = this.ensureConnected(args);
-    const tabId = args.tabId as number | undefined;
     const action = (args.action as string) || 'read';
     if (!['start', 'read', 'stop'].includes(action)) return errorResult(`"action" must be "start", "read", or "stop"`);
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
 
     if (action === 'start') {
       await bridge.evaluate(`(() => {
@@ -4715,10 +4714,10 @@ export class AlyBrowserMCPServer {
   // ── Fetch Intercept ───────────────────────────────────────
 
   private async handleFetchIntercept(args: Record<string, unknown>): Promise<ToolResult> {
-    const bridge = this.ensureConnected(args);
-    const tabId = args.tabId as number | undefined;
     const action = (args.action as string) || 'read';
     if (!['start', 'read', 'stop'].includes(action)) return errorResult(`"action" must be "start", "read", or "stop"`);
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
     const filter = (args.filter as string) || '';
 
     if (action === 'start') {
