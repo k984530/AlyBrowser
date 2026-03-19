@@ -1173,7 +1173,7 @@ export class AlyBrowserMCPServer {
         url: location.href,
         title: document.title,
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(metrics, 'browser_perf_metrics');
 
@@ -1222,7 +1222,7 @@ export class AlyBrowserMCPServer {
         } catch { results.push({ name, state: 'unsupported' }); }
       }
       return JSON.stringify(results);
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const perms = safeJsonParse(result);
     const icon = (s: string) => s === 'granted' ? '✓' : s === 'denied' ? '✗' : s === 'prompt' ? '?' : '—';
@@ -1261,7 +1261,7 @@ export class AlyBrowserMCPServer {
         }
         return JSON.stringify({ supported: true, count: dbs.length, databases: details });
       } catch (e) { return JSON.stringify({ supported: true, error: e.message }); }
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     if (!data.supported) return textResult(`[IndexedDB] ${data.note}`);
@@ -1299,7 +1299,7 @@ export class AlyBrowserMCPServer {
           cacheCount: cacheNames.length,
         });
       } catch (e) { return JSON.stringify({ supported: true, error: e.message }); }
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     if (!data.supported) return textResult('[Service Worker] Not supported in this context.');
@@ -1351,7 +1351,7 @@ export class AlyBrowserMCPServer {
 
       const total = Object.values(hints).reduce((s, a) => s + a.length, 0);
       return JSON.stringify({ hints, total, suggestions: suggestions.slice(0, 5) });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = [`[Resource Hints] ${data.total} hints found`];
@@ -1392,7 +1392,7 @@ export class AlyBrowserMCPServer {
         });
       });
       return JSON.stringify({ count: media.length, media: media.slice(0, 20) });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     if (data.count === 0) return textResult('[Media] No media elements found.');
@@ -1427,7 +1427,7 @@ export class AlyBrowserMCPServer {
         }
         return JSON.stringify({ count: nodes.length, nodes });
       } catch (e) { return JSON.stringify({ error: e.message }); }
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     if (data.error) return errorResult(`XPath error: ${data.error}`);
@@ -1463,7 +1463,7 @@ export class AlyBrowserMCPServer {
       if (!g('twitter:image') && !g('og:image')) twMissing.push('twitter:image');
 
       return JSON.stringify({ fb, tw, li, fbMissing, twMissing });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const d = safeJsonParse(result);
     const lines = [
@@ -1547,7 +1547,7 @@ export class AlyBrowserMCPServer {
         text: (el.textContent || '').trim().slice(0, 60),
         matchCount: document.querySelectorAll(css).length,
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     if (data.error) return errorResult(data.error);
@@ -1593,7 +1593,7 @@ export class AlyBrowserMCPServer {
       }
 
       return JSON.stringify({ total: links.length, valid, issues: issues.slice(0, 20), issueCount: issues.length });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
 
@@ -1636,7 +1636,7 @@ export class AlyBrowserMCPServer {
       check(document.querySelectorAll('object[data]'), 'data', 'object');
 
       return JSON.stringify({ secure: true, issues, count: issues.length });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
 
@@ -1691,7 +1691,7 @@ export class AlyBrowserMCPServer {
         topScripts: externals.slice(0, 10),
         blockingScripts: blocking.slice(0, 5),
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const fmt = (b: number) => b > 1024 ? `${(b / 1024).toFixed(1)}KB` : `${b}B`;
@@ -1750,7 +1750,7 @@ export class AlyBrowserMCPServer {
         cls: { value: Math.round(cls * 1000) / 1000, unit: '', grade: grade(cls, 0.1, 0.25) },
         ttfb: { value: Math.round(ttfb), unit: 'ms', grade: grade(ttfb, 800, 1800) },
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const icon = (g: string) => g === 'good' ? '✓' : g === 'needs-improvement' ? '△' : '✗';
@@ -1782,7 +1782,7 @@ export class AlyBrowserMCPServer {
       const count = els.length;
       els.forEach(el => el.remove());
       return JSON.stringify({ removed: count });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     return textResult(`[Remove] ${data.removed} element(s) removed (${selector})`);
@@ -1817,7 +1817,7 @@ export class AlyBrowserMCPServer {
         unusedRules: totalRules - usedRules, coveragePct: pct,
         topUnused: unusedSelectors.slice(0, 15),
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = [
@@ -1853,7 +1853,7 @@ export class AlyBrowserMCPServer {
       await bridge.evaluate(`(() => {
         if (window.__alyOrigFetch) { window.fetch = window.__alyOrigFetch; delete window.__alyOrigFetch; }
         if (window.__alyOrigXHR) { XMLHttpRequest.prototype.send = window.__alyOrigXHR; delete window.__alyOrigXHR; }
-      })()`, tabId);
+      })()`, tabId, frameId);
       return textResult('[Network Throttle] Disabled — restored original fetch/XHR.');
     }
 
@@ -1875,7 +1875,7 @@ export class AlyBrowserMCPServer {
         if (delay < 0) { this.dispatchEvent(new Event('error')); return; }
         setTimeout(() => window.__alyOrigXHR.apply(this, args), delay);
       };
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const label = preset || `${delay}ms`;
     return textResult(`[Network Throttle] Enabled: ${label} (${delay < 0 ? 'offline' : delay + 'ms delay'})`);
@@ -1914,7 +1914,7 @@ export class AlyBrowserMCPServer {
       Object.defineProperty(window, 'devicePixelRatio', { get: () => ${dpr}, configurable: true });
       // Viewport resize
       window.resizeTo(${w}, ${h});
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     await new Promise((r) => setTimeout(r, 300));
 
@@ -1951,7 +1951,7 @@ export class AlyBrowserMCPServer {
 
       const now = new Date().toLocaleString('en', { timeZone: tz });
       return JSON.stringify({ ok: true, timezone: tz, localTime: now });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     if (data.error) return errorResult(data.error);
@@ -1978,7 +1978,7 @@ export class AlyBrowserMCPServer {
     const tabId = args.tabId as number | undefined;
     const frameId = args.frameId as number | undefined;
 
-    await bridge.evaluate(`Object.defineProperty(navigator, 'userAgent', { get: () => ${JSON.stringify(ua)}, configurable: true })`, tabId);
+    await bridge.evaluate(`Object.defineProperty(navigator, 'userAgent', { get: () => ${JSON.stringify(ua)}, configurable: true })`, tabId, frameId);
 
     const label = custom ? 'custom' : preset!;
     return textResult(`[User Agent] Set to ${label}: ${ua.slice(0, 80)}...`);
@@ -2011,7 +2011,7 @@ export class AlyBrowserMCPServer {
       const mockPos = { coords: { latitude: ${lat}, longitude: ${lng}, accuracy: 10, altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() };
       navigator.geolocation.getCurrentPosition = (success) => success(mockPos);
       navigator.geolocation.watchPosition = (success) => { success(mockPos); return 1; };
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const label = preset || `${lat},${lng}`;
     return textResult(`[Geolocation] Mocked to ${label} (${lat}, ${lng})`);
@@ -2054,7 +2054,7 @@ export class AlyBrowserMCPServer {
         }
       }
       return JSON.stringify({ count: results.length, elements: results });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = [`[Event Listeners] ${data.count} interactive elements`];
@@ -2092,7 +2092,7 @@ export class AlyBrowserMCPServer {
         hiddenElements: hiddenInPrint,
         title: document.title, url: location.href,
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = [
@@ -2139,7 +2139,7 @@ export class AlyBrowserMCPServer {
         totalElements: document.querySelectorAll('*').length,
         log,
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = [`[Infinite Scroll] ${data.scrolls} scrolls, ${data.totalElements} elements, ${data.finalHeight}px`];
@@ -2192,7 +2192,7 @@ export class AlyBrowserMCPServer {
         visible: el.checkVisibility ? el.checkVisibility() : rect.width > 0,
         bounds: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     if (data.error) return errorResult(data.error);
@@ -2226,7 +2226,7 @@ export class AlyBrowserMCPServer {
       });
 
       return JSON.stringify(data);
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = ['[Structured Data]'];
@@ -2271,20 +2271,20 @@ export class AlyBrowserMCPServer {
 
     switch (name) {
       case 'browser_scroll_to_bottom':
-        await bridge.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)', tabId);
+        await bridge.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)', tabId, frameId);
         return textResult('Scrolled to bottom.');
       case 'browser_scroll_to_top':
-        await bridge.evaluate('window.scrollTo(0, 0)', tabId);
+        await bridge.evaluate('window.scrollTo(0, 0)', tabId, frameId);
         return textResult('Scrolled to top.');
       case 'browser_get_url':
         return textResult(String(await bridge.evaluate('location.href', tabId, frameId)));
       case 'browser_get_title':
         return textResult(String(await bridge.evaluate('document.title', tabId, frameId)));
       case 'browser_focus':
-        await bridge.evaluate(`document.querySelector(${JSON.stringify(args.selector)})?.focus()`, tabId);
+        await bridge.evaluate(`document.querySelector(${JSON.stringify(args.selector)})?.focus()`, tabId, frameId);
         return textResult(`Focused: ${args.selector}`);
       case 'browser_blur':
-        await bridge.evaluate('document.activeElement?.blur()', tabId);
+        await bridge.evaluate('document.activeElement?.blur()', tabId, frameId);
         return textResult('Blurred active element.');
       case 'browser_press_key': {
         const key = args.key as string;
@@ -2292,11 +2292,11 @@ export class AlyBrowserMCPServer {
           const t = document.activeElement || document.body;
           t.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true }));
           t.dispatchEvent(new KeyboardEvent('keyup', { key: ${JSON.stringify(key)}, bubbles: true }));
-        })()`, tabId);
+        })()`, tabId, frameId);
         return textResult(`Pressed: ${key}`);
       }
       case 'browser_reload':
-        await bridge.evaluate(`location.reload(${args.hard ? 'true' : ''})`, tabId);
+        await bridge.evaluate(`location.reload(${args.hard ? 'true' : ''})`, tabId, frameId);
         return textResult(args.hard ? 'Hard reload.' : 'Reload.');
       case 'browser_page_info': {
         const info = await bridge.evaluate(`JSON.stringify({
@@ -2305,11 +2305,11 @@ export class AlyBrowserMCPServer {
           viewport: { width: window.innerWidth, height: window.innerHeight },
           scroll: { x: window.scrollX, y: window.scrollY },
           docSize: { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight },
-        })`, tabId);
+        })`, tabId, frameId);
         return textResult(typeof info === 'string' ? info : JSON.stringify(info, null, 2));
       }
       case 'browser_element_count': {
-        const count = await bridge.evaluate('document.querySelectorAll("*").length', tabId);
+        const count = await bridge.evaluate('document.querySelectorAll("*").length', tabId, frameId);
         return textResult(`DOM elements: ${count}`);
       }
       default:
@@ -2356,7 +2356,7 @@ export class AlyBrowserMCPServer {
       });
       el.dispatchEvent(evt);
       return JSON.stringify({ ok: true, tag: el.tagName.toLowerCase(), id: el.id || null });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     if (data.error) return errorResult(data.error);
@@ -2385,7 +2385,7 @@ export class AlyBrowserMCPServer {
         count++;
       });
       return JSON.stringify({ count, action: ${value !== undefined} ? 'set' : 'removed' });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const verb = data.action === 'set' ? `set "${attribute}"="${value}"` : `removed "${attribute}"`;
@@ -2404,7 +2404,7 @@ export class AlyBrowserMCPServer {
     const frameId = args.frameId as number | undefined;
 
     if (action === 'clear') {
-      await bridge.evaluate(`document.querySelectorAll('[data-aly-highlight]').forEach(el => { el.style.outline = el.dataset.alyOrigOutline || ''; delete el.dataset.alyHighlight; delete el.dataset.alyOrigOutline; })`, tabId);
+      await bridge.evaluate(`document.querySelectorAll('[data-aly-highlight]').forEach(el => { el.style.outline = el.dataset.alyOrigOutline || ''; delete el.dataset.alyHighlight; delete el.dataset.alyOrigOutline; })`, tabId, frameId);
       return textResult('[Highlight] All highlights cleared.');
     }
 
@@ -2423,7 +2423,7 @@ export class AlyBrowserMCPServer {
         count++;
       });
       return JSON.stringify({ count, selector: ${JSON.stringify(selector)}, color: ${JSON.stringify(color)} });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     return textResult(`[Highlight] ${data.count} element(s) highlighted with ${data.color} (${data.selector})`);
@@ -2468,7 +2468,7 @@ export class AlyBrowserMCPServer {
       const content = extractText(main, 0).trim();
       const wordCount = content.split(/\\s+/).filter(Boolean).length;
       return JSON.stringify({ title: document.title, url: location.href, wordCount, content: content.slice(0, 10000) });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = [
@@ -2503,7 +2503,7 @@ export class AlyBrowserMCPServer {
         y: Math.round(rect.top + window.scrollY),
         visible: rect.top >= 0 && rect.bottom <= window.innerHeight,
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     if (data.error) return errorResult(data.error);
@@ -2527,7 +2527,7 @@ export class AlyBrowserMCPServer {
         try { return { selector: s, count: document.querySelectorAll(s).length }; }
         catch { return { selector: s, count: 0, error: 'Invalid selector' }; }
       }));
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const counts = safeJsonParse(result);
     const lines = ['[Element Count]'];
@@ -2567,7 +2567,7 @@ export class AlyBrowserMCPServer {
         source: src.tagName.toLowerCase() + (src.id ? '#' + src.id : ''),
         target: tgt.tagName.toLowerCase() + (tgt.id ? '#' + tgt.id : ''),
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     if (data.error) return errorResult(data.error);
@@ -2614,7 +2614,7 @@ export class AlyBrowserMCPServer {
         setTimeout(check, 200);
       };
       check();
-    })`, tabId);
+    })`, tabId, frameId);
 
     const data = safeJsonParse(result);
 
@@ -2649,7 +2649,7 @@ export class AlyBrowserMCPServer {
         }
       }
       return JSON.stringify({ total: document.querySelectorAll(${JSON.stringify(selector)}).length, clicked: clicked.length, elements: clicked });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = [`[Click All] ${data.clicked}/${data.total} elements clicked (selector: ${selector})`];
@@ -2711,7 +2711,7 @@ export class AlyBrowserMCPServer {
       }
 
       return JSON.stringify({ action, found: blockers.length, blockers });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
 
@@ -2758,7 +2758,7 @@ export class AlyBrowserMCPServer {
         if (matches.length >= 50) break;
       }
       return JSON.stringify({ query: ${JSON.stringify(query)}, count: matches.length, matches });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
 
@@ -2799,7 +2799,7 @@ export class AlyBrowserMCPServer {
       const webFonts = [...document.fonts].filter(f => f.status === 'loaded').map(f => ({ family: f.family, style: f.style, weight: f.weight }));
       const sort = (obj) => Object.entries(obj).sort((a,b) => b[1] - a[1]).slice(0, 10).map(([k, n]) => ({ value: k, count: n }));
       return JSON.stringify({ families: sort(fonts), sizes: sort(sizes), weights: sort(weights), webFonts: webFonts.slice(0, 10) });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = ['[Font Analysis]'];
@@ -2846,7 +2846,7 @@ export class AlyBrowserMCPServer {
       }
       const sort = (obj) => Object.entries(obj).sort((a,b) => b[1] - a[1]).slice(0, 10).map(([c, n]) => ({ color: c, count: n }));
       return JSON.stringify({ backgrounds: sort(colors.bg), textColors: sort(colors.text), borders: sort(colors.border) });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = ['[Color Palette]'];
@@ -2893,13 +2893,13 @@ export class AlyBrowserMCPServer {
         window.confirm = (msg) => { push({ type: 'confirm', message: String(msg).slice(0, 200), response: '${confirmResp}', ts: Date.now() }); return ${confirmResp === 'accept'}; };
         window.prompt = (msg, def) => { push({ type: 'prompt', message: String(msg).slice(0, 200), response: ${JSON.stringify(promptVal)}, ts: Date.now() }); return ${JSON.stringify(promptVal)}; };
         window.__alyDialogConfig = { alert: '${alertResp}', confirm: '${confirmResp}', prompt: ${JSON.stringify(promptVal)} };
-      })()`, tabId);
+      })()`, tabId, frameId);
 
       return textResult(`[Dialog Handler] Configured: alert=${alertResp}, confirm=${confirmResp}, prompt="${promptVal}"`);
     }
 
     if (action === 'history') {
-      const result = await bridge.evaluate(`JSON.stringify(window.__alyDialogHistory || [])`, tabId);
+      const result = await bridge.evaluate(`JSON.stringify(window.__alyDialogHistory || [])`, tabId, frameId);
       const history = safeJsonParse(result);
       if (!history || history.length === 0) return textResult('[Dialog Handler] No dialogs captured yet.');
 
@@ -2911,7 +2911,7 @@ export class AlyBrowserMCPServer {
     }
 
     // status
-    const result = await bridge.evaluate(`JSON.stringify(window.__alyDialogConfig || null)`, tabId);
+    const result = await bridge.evaluate(`JSON.stringify(window.__alyDialogConfig || null)`, tabId, frameId);
     const config = safeJsonParse(result);
     if (!config) return textResult('[Dialog Handler] Not configured. Use action="configure" to set auto-responses.');
     return textResult(`[Dialog Handler] Active: alert=${config.alert}, confirm=${config.confirm}, prompt="${config.prompt}"`);
@@ -2941,14 +2941,14 @@ export class AlyBrowserMCPServer {
         style.textContent = ${cssJson};
         document.head.appendChild(style);
         return JSON.stringify({ id, length: ${cssJson}.length });
-      })()`, tabId);
+      })()`, tabId, frameId);
       const data = safeJsonParse(result);
       return textResult(`[Style] Injected "${data.id}" (${data.length} chars)`);
     }
 
     if (action === 'remove') {
       const id = args.id as string;
-      await bridge.evaluate(`document.getElementById(${JSON.stringify(id)})?.remove()`, tabId);
+      await bridge.evaluate(`document.getElementById(${JSON.stringify(id)})?.remove()`, tabId, frameId);
       return textResult(`[Style] Removed "${id}"`);
     }
 
@@ -2956,7 +2956,7 @@ export class AlyBrowserMCPServer {
     const result = await bridge.evaluate(`(() => {
       const styles = [...document.querySelectorAll('style[data-aly-override]')];
       return JSON.stringify(styles.map(s => ({ id: s.id, length: (s.textContent || '').length, preview: (s.textContent || '').slice(0, 80) })));
-    })()`, tabId);
+    })()`, tabId, frameId);
     const styles = safeJsonParse(result);
 
     if (styles.length === 0) return textResult('[Style] No active overrides');
@@ -3016,7 +3016,7 @@ export class AlyBrowserMCPServer {
         items.push({ key: k, size: (v || '').length, preview: (v || '').slice(0, 80) });
       }
       return JSON.stringify({ count: items.length, items });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
 
@@ -3071,7 +3071,7 @@ export class AlyBrowserMCPServer {
         setTimeout(check, 200);
       };
       check();
-    })`, tabId);
+    })`, tabId, frameId);
 
     const data = safeJsonParse(result);
 
@@ -3144,7 +3144,7 @@ export class AlyBrowserMCPServer {
         issues,
         metrics: { load, ttfb, domElements, totalSize, resourceCount: resources.length },
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const grade = data.score >= 90 ? 'A' : data.score >= 70 ? 'B' : data.score >= 50 ? 'C' : data.score >= 30 ? 'D' : 'F';
@@ -3273,7 +3273,7 @@ export class AlyBrowserMCPServer {
         resourceCount: entries.length,
         heaviest: heaviest.slice(0, 10),
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const fmt = (b: number) => b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : b > 1024 ? `${(b / 1024).toFixed(1)} KB` : `${b} B`;
@@ -3378,7 +3378,7 @@ export class AlyBrowserMCPServer {
       }
 
       return JSON.stringify({ found: detections.length > 0, detections, url: location.href });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
 
@@ -3455,7 +3455,7 @@ export class AlyBrowserMCPServer {
         changes: changes.slice(-50),
         total: changes.length,
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
 
@@ -3533,7 +3533,7 @@ export class AlyBrowserMCPServer {
       }
 
       return JSON.stringify({ pageHeight: docH, viewportHeight: window.innerHeight, sections });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = [
@@ -3571,7 +3571,7 @@ export class AlyBrowserMCPServer {
         // Also set data attribute for CSS that reads it
         document.documentElement.setAttribute('data-theme', '${action}');
         document.documentElement.style.colorScheme = '${action}';
-      })()`, tabId);
+      })()`, tabId, frameId);
     }
 
     const result = await bridge.evaluate(`(() => {
@@ -3605,7 +3605,7 @@ export class AlyBrowserMCPServer {
         colorSchemeAttr: document.documentElement.style.colorScheme || cs.colorScheme || 'auto',
         dataTheme: document.documentElement.getAttribute('data-theme') || null,
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = [
@@ -3687,7 +3687,7 @@ export class AlyBrowserMCPServer {
         activeBreakpoints,
         devicePixelRatio: window.devicePixelRatio,
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const label = preset || `${data.viewport.width}x${data.viewport.height}`;
@@ -3746,7 +3746,7 @@ export class AlyBrowserMCPServer {
       };
       walk(document.body);
       return JSON.stringify({ title: document.title, blocks: blocks.slice(0, 100), total: blocks.length });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = [`[Text Content] "${data.title}" — ${data.total} blocks`];
@@ -3804,7 +3804,7 @@ export class AlyBrowserMCPServer {
       }
       if (idx >= tables.length) return JSON.stringify({ error: 'Table index ' + idx + ' out of range (found ' + tables.length + ')' });
       return JSON.stringify(extractTable(tables[idx]));
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
 
@@ -3855,7 +3855,7 @@ export class AlyBrowserMCPServer {
       const broken = imgs.filter(i => !i.loaded).length;
       const missingAlt = imgs.filter(i => !i.hasAlt).length;
       return JSON.stringify({ total: imgs.length, broken, missingAlt, images: imgs.slice(0, 50) });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = [
@@ -3889,7 +3889,7 @@ export class AlyBrowserMCPServer {
       const filter = ${JSON.stringify(filter)};
       const filtered = filter === 'all' ? links : links.filter(l => l.type === filter);
       return JSON.stringify({ total: links.length, filtered: filtered.length, links: filtered.slice(0, 100) });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const lines = [`[Links] ${data.filtered} links${filter !== 'all' ? ` (${filter})` : ''} of ${data.total} total`];
@@ -3947,7 +3947,7 @@ export class AlyBrowserMCPServer {
         childCount: el.children.length,
         visible: el.checkVisibility ? el.checkVisibility() : rect.width > 0 && rect.height > 0,
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
 
@@ -4026,7 +4026,7 @@ export class AlyBrowserMCPServer {
         jsonLd: jsonLd.length > 0 ? jsonLd : null,
         issues: [],
       });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const data = safeJsonParse(result);
     const issues: string[] = [];
@@ -4120,7 +4120,7 @@ export class AlyBrowserMCPServer {
       // Drain after read
       window.__alyConsoleLog = [];
       return JSON.stringify(logs);
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const logs = safeJsonParse(result);
 
@@ -4162,7 +4162,7 @@ export class AlyBrowserMCPServer {
           start: Math.round(e.startTime),
         }))
       );
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const entries = safeJsonParse(result);
 
@@ -4227,7 +4227,7 @@ export class AlyBrowserMCPServer {
             required: el.required,
           }))
       );
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const parsed = typeof fields === 'string' ? safeJsonParse(fields) : fields;
     return jsonResult(parsed);
@@ -4295,7 +4295,7 @@ export class AlyBrowserMCPServer {
       });
 
       return JSON.stringify({ filled, skipped });
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const parsed = safeJsonParse(result);
     const lines = [
@@ -4387,7 +4387,7 @@ export class AlyBrowserMCPServer {
       });
 
       return JSON.stringify(issues);
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     const issues = typeof audit === 'string' ? JSON.parse(audit) : audit;
 
@@ -4722,7 +4722,7 @@ export class AlyBrowserMCPServer {
         window.WebSocket.CLOSING = OrigWS.CLOSING;
         window.WebSocket.CLOSED = OrigWS.CLOSED;
         return 'installed';
-      })()`, tabId);
+      })()`, tabId, frameId);
 
       return textResult('[WebSocket Monitor] Interceptor installed. New WebSocket connections will be captured. Use action="read" to view messages.');
     }
@@ -4735,7 +4735,7 @@ export class AlyBrowserMCPServer {
         }
         delete window.__alyWsMonitor;
         return 'removed';
-      })()`, tabId);
+      })()`, tabId, frameId);
 
       return textResult('[WebSocket Monitor] Interceptor removed.');
     }
@@ -4753,7 +4753,7 @@ export class AlyBrowserMCPServer {
       };
       window.__alyWsMonitor.messages = [];
       return JSON.stringify(data);
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     let data: Record<string, unknown>;
     try {
@@ -4842,7 +4842,7 @@ export class AlyBrowserMCPServer {
           }
         };
         return 'installed';
-      })()`, tabId);
+      })()`, tabId, frameId);
 
       return textResult('[Fetch Intercept] Interceptor installed. API calls via fetch() will be captured. Use action="read" to view.');
     }
@@ -4855,7 +4855,7 @@ export class AlyBrowserMCPServer {
         }
         delete window.__alyFetchMonitor;
         return 'removed';
-      })()`, tabId);
+      })()`, tabId, frameId);
 
       return textResult('[Fetch Intercept] Interceptor removed.');
     }
@@ -4870,7 +4870,7 @@ export class AlyBrowserMCPServer {
       const data = { installed: true, requests: [...reqs], total: reqs.length };
       window.__alyFetchMonitor.requests = [];
       return JSON.stringify(data);
-    })()`, tabId);
+    })()`, tabId, frameId);
 
     let data: Record<string, unknown>;
     try {
