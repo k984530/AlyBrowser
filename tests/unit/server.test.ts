@@ -1096,7 +1096,7 @@ describe('AlyBrowserMCPServer', () => {
         expression: 'document.title',
       });
       expect(result.isError).toBeFalsy();
-      expect(bridge.evaluate).toHaveBeenCalledWith('document.title', undefined);
+      expect(bridge.evaluate).toHaveBeenCalledWith('document.title', undefined, undefined);
     });
 
     it('html returns page source', async () => {

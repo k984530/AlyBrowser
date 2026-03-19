@@ -158,6 +158,11 @@ export class AlyBrowserMCPServer {
     return set;
   }
 
+  /** Extract tabId and frameId from args (used by most handlers) */
+  private tabFrame(args: Record<string, unknown>): { tabId: number | undefined; frameId: number | undefined } {
+    return { tabId: args.tabId as number | undefined, frameId: args.frameId as number | undefined };
+  }
+
   private ensureConnected(args: Record<string, unknown>): ExtensionBridge {
     const bridge = this.getBridge(args);
     if (!bridge.isConnected) {
@@ -708,6 +713,7 @@ export class AlyBrowserMCPServer {
     const bridge = this.ensureConnected(args);
     const url = this.requireString(args, 'url');
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const kKey = this.knowledgeKey(url);
 
     let prefix = '';
@@ -727,6 +733,7 @@ export class AlyBrowserMCPServer {
   private async handleBack(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     await bridge.goBack(tabId);
     const snap = await bridge.snapshot(tabId);
     return textResult(snap);
@@ -735,6 +742,7 @@ export class AlyBrowserMCPServer {
   private async handleForward(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     await bridge.goForward(tabId);
     const snap = await bridge.snapshot(tabId);
     return textResult(snap);
@@ -821,7 +829,8 @@ export class AlyBrowserMCPServer {
     const bridge = this.ensureConnected(args);
     const expr = this.requireString(args, 'expression');
     const tabId = args.tabId as number | undefined;
-    const result = await bridge.evaluate(expr, tabId);
+    const frameId = args.frameId as number | undefined;
+    const result = await bridge.evaluate(expr, tabId, frameId);
     return textResult(
       typeof result === 'string' ? result : JSON.stringify(result, null, 2),
     );
@@ -919,6 +928,7 @@ export class AlyBrowserMCPServer {
   private async handleFrameList(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const maxDepth = (args.depth as number) ?? 10;
     const frames = (await bridge.frameList(tabId)) as Array<{ frameId: number; parentFrameId: number; url: string }>;
 
@@ -1102,6 +1112,7 @@ export class AlyBrowserMCPServer {
   private async handleClipboardRead(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const text = await bridge.clipboardRead(tabId);
     return textResult(typeof text === 'string' ? text : JSON.stringify(text));
   }
@@ -1110,6 +1121,7 @@ export class AlyBrowserMCPServer {
     const bridge = this.ensureConnected(args);
     const text = this.requireString(args, 'text');
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     await bridge.clipboardWrite(text, tabId);
     return textResult('Clipboard updated.');
   }
@@ -1126,6 +1138,7 @@ export class AlyBrowserMCPServer {
   private async handlePerfMetrics(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const metrics = await bridge.evaluate(`(() => {
       const t = performance.timing;
@@ -1197,6 +1210,7 @@ export class AlyBrowserMCPServer {
   private async handlePermissionsCheck(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(async () => {
       const names = ['geolocation','notifications','camera','microphone','clipboard-read','clipboard-write','persistent-storage'];
@@ -1222,6 +1236,7 @@ export class AlyBrowserMCPServer {
   private async handleIndexedDbList(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(async () => {
       if (!indexedDB.databases) return JSON.stringify({ supported: false, note: 'indexedDB.databases() not available' });
@@ -1265,6 +1280,7 @@ export class AlyBrowserMCPServer {
   private async handleServiceWorkerInfo(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(async () => {
       if (!('serviceWorker' in navigator)) return JSON.stringify({ supported: false });
@@ -1305,6 +1321,7 @@ export class AlyBrowserMCPServer {
   private async handleResourceHints(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const hints = { preload: [], prefetch: [], preconnect: [], 'dns-prefetch': [], modulepreload: [] };
@@ -1357,6 +1374,7 @@ export class AlyBrowserMCPServer {
   private async handleMediaList(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const media = [];
@@ -1393,6 +1411,7 @@ export class AlyBrowserMCPServer {
     const xpath = this.requireString(args, 'xpath');
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       try {
@@ -1423,6 +1442,7 @@ export class AlyBrowserMCPServer {
   private async handleOpenGraphPreview(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const g = (n) => (document.querySelector('meta[property="' + n + '"], meta[name="' + n + '"]') || {}).content || '';
@@ -1478,6 +1498,7 @@ export class AlyBrowserMCPServer {
 
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const text = ${JSON.stringify(text || null)};
@@ -1544,6 +1565,7 @@ export class AlyBrowserMCPServer {
   private async handleBrokenLinks(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const links = [...document.querySelectorAll('a[href]')];
@@ -1590,6 +1612,7 @@ export class AlyBrowserMCPServer {
   private async handleMixedContentCheck(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const isHttps = location.protocol === 'https:';
@@ -1633,6 +1656,7 @@ export class AlyBrowserMCPServer {
   private async handleJsCoverage(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const scripts = [...document.querySelectorAll('script')];
@@ -1698,6 +1722,7 @@ export class AlyBrowserMCPServer {
   private async handleWebVitals(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const t = performance.timing;
@@ -1750,6 +1775,7 @@ export class AlyBrowserMCPServer {
     const selector = this.requireString(args, 'selector');
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const els = document.querySelectorAll(${JSON.stringify(selector)});
@@ -1767,6 +1793,7 @@ export class AlyBrowserMCPServer {
   private async handleCssCoverage(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       let totalRules = 0, usedRules = 0, unusedSelectors = [];
@@ -1820,6 +1847,7 @@ export class AlyBrowserMCPServer {
 
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     if (action === 'disable') {
       await bridge.evaluate(`(() => {
@@ -1875,6 +1903,7 @@ export class AlyBrowserMCPServer {
 
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     await bridge.evaluate(`(() => {
       // UA
@@ -1906,6 +1935,7 @@ export class AlyBrowserMCPServer {
     const tz = this.requireString(args, 'timezone');
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const tz = ${JSON.stringify(tz)};
@@ -1946,6 +1976,7 @@ export class AlyBrowserMCPServer {
 
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     await bridge.evaluate(`Object.defineProperty(navigator, 'userAgent', { get: () => ${JSON.stringify(ua)}, configurable: true })`, tabId);
 
@@ -1974,6 +2005,7 @@ export class AlyBrowserMCPServer {
 
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     await bridge.evaluate(`(() => {
       const mockPos = { coords: { latitude: ${lat}, longitude: ${lng}, accuracy: 10, altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() };
@@ -1990,6 +2022,7 @@ export class AlyBrowserMCPServer {
   private async handleEventListenerList(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const selector = (args.selector as string) || 'a,button,input,select,textarea,form,[onclick],[tabindex]';
 
     const result = await bridge.evaluate(`(() => {
@@ -2038,6 +2071,7 @@ export class AlyBrowserMCPServer {
   private async handlePrintPreview(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const docH = document.documentElement.scrollHeight;
@@ -2076,6 +2110,7 @@ export class AlyBrowserMCPServer {
   private async handleInfiniteScroll(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const maxScrolls = (args.maxScrolls as number) ?? 10;
     const waitMs = (args.waitMs as number) ?? 1500;
 
@@ -2120,6 +2155,7 @@ export class AlyBrowserMCPServer {
     const pathStr = this.requireString(args, 'path');
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const action = (args.action as string) || 'query';
     if (!['query', 'click', 'text'].includes(action)) return errorResult(`"action" must be "query", "click", or "text"`);
 
@@ -2170,6 +2206,7 @@ export class AlyBrowserMCPServer {
   private async handleJsonExtract(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const data = { jsonLd: [], meta: {}, openGraph: {}, twitter: {} };
@@ -2230,6 +2267,7 @@ export class AlyBrowserMCPServer {
 
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     switch (name) {
       case 'browser_scroll_to_bottom':
@@ -2239,9 +2277,9 @@ export class AlyBrowserMCPServer {
         await bridge.evaluate('window.scrollTo(0, 0)', tabId);
         return textResult('Scrolled to top.');
       case 'browser_get_url':
-        return textResult(String(await bridge.evaluate('location.href', tabId)));
+        return textResult(String(await bridge.evaluate('location.href', tabId, frameId)));
       case 'browser_get_title':
-        return textResult(String(await bridge.evaluate('document.title', tabId)));
+        return textResult(String(await bridge.evaluate('document.title', tabId, frameId)));
       case 'browser_focus':
         await bridge.evaluate(`document.querySelector(${JSON.stringify(args.selector)})?.focus()`, tabId);
         return textResult(`Focused: ${args.selector}`);
@@ -2304,6 +2342,7 @@ export class AlyBrowserMCPServer {
     const selector = this.requireString(args, 'selector');
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const el = document.querySelector(${JSON.stringify(selector)});
@@ -2331,6 +2370,7 @@ export class AlyBrowserMCPServer {
     const attribute = this.requireString(args, 'attribute');
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const value = args.value as string | undefined;
 
     const result = await bridge.evaluate(`(() => {
@@ -2361,6 +2401,7 @@ export class AlyBrowserMCPServer {
 
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     if (action === 'clear') {
       await bridge.evaluate(`document.querySelectorAll('[data-aly-highlight]').forEach(el => { el.style.outline = el.dataset.alyOrigOutline || ''; delete el.dataset.alyHighlight; delete el.dataset.alyOrigOutline; })`, tabId);
@@ -2393,6 +2434,7 @@ export class AlyBrowserMCPServer {
   private async handlePageToPdfData(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       // Try to find main content area
@@ -2446,6 +2488,7 @@ export class AlyBrowserMCPServer {
     const selector = this.requireString(args, 'selector');
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const block = (args.block as string) || 'center';
 
     const result = await bridge.evaluate(`(() => {
@@ -2476,6 +2519,7 @@ export class AlyBrowserMCPServer {
     }
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const selectors = ${JSON.stringify(selectors)};
@@ -2500,6 +2544,7 @@ export class AlyBrowserMCPServer {
     const target = this.requireString(args, 'target');
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const src = document.querySelector(${JSON.stringify(source)});
@@ -2535,6 +2580,7 @@ export class AlyBrowserMCPServer {
     const pattern = this.requireString(args, 'pattern');
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const timeout = (args.timeout as number) ?? 15000;
 
     const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
@@ -2584,6 +2630,7 @@ export class AlyBrowserMCPServer {
     const selector = this.requireString(args, 'selector');
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const limit = (args.limit as number) ?? 20;
 
     const result = await bridge.evaluate(`(() => {
@@ -2616,6 +2663,7 @@ export class AlyBrowserMCPServer {
   private async handlePopupBlocker(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const action = (args.action as string) || 'detect';
     if (!['detect', 'remove'].includes(action)) return errorResult(`"action" must be "detect" or "remove"`);
 
@@ -2682,6 +2730,7 @@ export class AlyBrowserMCPServer {
     const query = this.requireString(args, 'query');
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const query = ${JSON.stringify(query)}.toLowerCase();
@@ -2727,6 +2776,7 @@ export class AlyBrowserMCPServer {
   private async handleFontList(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const fonts = {};
@@ -2777,6 +2827,7 @@ export class AlyBrowserMCPServer {
   private async handleColorPicker(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const colors = { bg: {}, text: {}, border: {} };
@@ -2819,6 +2870,7 @@ export class AlyBrowserMCPServer {
   private async handleDialogHandler(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const action = (args.action as string) || 'status';
     if (!['configure', 'status', 'history'].includes(action)) return errorResult(`"action" must be "configure", "status", or "history"`);
 
@@ -2874,6 +2926,7 @@ export class AlyBrowserMCPServer {
 
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     if (action === 'inject') {
       const css = args.css as string;
@@ -2929,6 +2982,7 @@ export class AlyBrowserMCPServer {
 
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const action = ${JSON.stringify(action)};
@@ -2990,6 +3044,7 @@ export class AlyBrowserMCPServer {
     const text = this.requireString(args, 'text');
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const hidden = (args.hidden as boolean) ?? false;
     const timeout = (args.timeout as number) ?? 10000;
 
@@ -3038,6 +3093,7 @@ export class AlyBrowserMCPServer {
   private async handlePageAudit(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const issues = { perf: [], a11y: [], seo: [], weight: [] };
@@ -3183,6 +3239,7 @@ export class AlyBrowserMCPServer {
   private async handlePageSize(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const entries = performance.getEntriesByType('resource');
@@ -3280,6 +3337,7 @@ export class AlyBrowserMCPServer {
   private async handleCaptchaDetect(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const detections = [];
@@ -3341,6 +3399,7 @@ export class AlyBrowserMCPServer {
   private async handleDomObserve(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const action = (args.action as string) || 'read';
     if (!['start', 'stop', 'read'].includes(action)) return errorResult(`"action" must be "start", "stop", or "read"`);
 
@@ -3432,6 +3491,7 @@ export class AlyBrowserMCPServer {
   private async handleScrollMap(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const numSections = (args.sections as number) ?? 5;
 
     const result = await bridge.evaluate(`(() => {
@@ -3494,6 +3554,7 @@ export class AlyBrowserMCPServer {
     if (!['detect', 'dark', 'light'].includes(action)) return errorResult(`"action" must be "detect", "dark", or "light"`);
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     if (action === 'dark' || action === 'light') {
       // Emulate color scheme by injecting a meta tag + overriding matchMedia
@@ -3572,6 +3633,7 @@ export class AlyBrowserMCPServer {
 
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const width = (args.width as number) ?? (preset ? presets[preset]?.[0] : undefined);
     const height = (args.height as number) ?? (preset ? presets[preset]?.[1] : undefined);
 
@@ -3649,6 +3711,7 @@ export class AlyBrowserMCPServer {
   private async handleTextContent(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const blocks = [];
@@ -3709,6 +3772,7 @@ export class AlyBrowserMCPServer {
   private async handleTableExtract(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const index = (args.index as number) ?? 0;
 
     const result = await bridge.evaluate(`(() => {
@@ -3775,6 +3839,7 @@ export class AlyBrowserMCPServer {
   private async handleImageList(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const imgs = [...document.querySelectorAll('img')].map(img => ({
@@ -3806,6 +3871,7 @@ export class AlyBrowserMCPServer {
   private async handleLinkExtract(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const filter = (args.filter as string) || 'all';
 
     const result = await bridge.evaluate(`(() => {
@@ -3839,6 +3905,7 @@ export class AlyBrowserMCPServer {
     const selector = this.requireString(args, 'selector');
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const selectorJson = JSON.stringify(selector);
     const result = await bridge.evaluate(`(() => {
@@ -3916,6 +3983,7 @@ export class AlyBrowserMCPServer {
   private async handleMetaSeo(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const result = await bridge.evaluate(`(() => {
       const getMeta = (name) => {
@@ -4014,6 +4082,7 @@ export class AlyBrowserMCPServer {
   private async handleConsoleLog(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const level = (args.level as string) || 'all';
 
     const result = await bridge.evaluate(`(() => {
@@ -4072,6 +4141,7 @@ export class AlyBrowserMCPServer {
   private async handleNetworkLog(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const filter = args.filter as string | undefined;
 
     const filterJson = filter ? JSON.stringify(filter) : 'null';
@@ -4115,6 +4185,7 @@ export class AlyBrowserMCPServer {
   private async handleFormDetect(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const fields = await bridge.evaluate(`(() => {
       const classify = (el) => {
@@ -4168,6 +4239,7 @@ export class AlyBrowserMCPServer {
 
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const dataJson = JSON.stringify(data);
     const result = await bridge.evaluate(`(() => {
@@ -4248,6 +4320,7 @@ export class AlyBrowserMCPServer {
   private async handleA11yAudit(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     const audit = await bridge.evaluate(`(() => {
       const issues = [];
@@ -4431,7 +4504,7 @@ export class AlyBrowserMCPServer {
     try {
       const bridge = this.sessions.get(sessionId);
       if (bridge?.isConnected) {
-        const href = await bridge.evaluate('location.href', tabId);
+        const href = await bridge.evaluate('location.href', tabId, frameId);
         return typeof href === 'string' ? href : String(href);
       }
     } catch {
@@ -4603,6 +4676,7 @@ export class AlyBrowserMCPServer {
     if (!['start', 'read', 'stop'].includes(action)) return errorResult(`"action" must be "start", "read", or "stop"`);
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
 
     if (action === 'start') {
       await bridge.evaluate(`(() => {
@@ -4718,6 +4792,7 @@ export class AlyBrowserMCPServer {
     if (!['start', 'read', 'stop'].includes(action)) return errorResult(`"action" must be "start", "read", or "stop"`);
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
     const filter = (args.filter as string) || '';
 
     if (action === 'start') {
@@ -4888,7 +4963,7 @@ export class AlyBrowserMCPServer {
             await bridge.type(params.ref as string, params.text as string, { clear: params.clear as boolean, tabId, frameId });
             return `Typed "${(params.text as string)?.slice(0, 30)}"`;
           case 'eval': {
-            const evalResult = await bridge.evaluate(params.expression as string, tabId);
+            const evalResult = await bridge.evaluate(params.expression as string, tabId, frameId);
             return typeof evalResult === 'string' ? evalResult : JSON.stringify(evalResult);
           }
           case 'scroll':

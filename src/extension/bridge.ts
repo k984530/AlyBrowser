@@ -493,8 +493,8 @@ export class ExtensionBridge {
     await this.send('hover', { ref, tabId, frameId });
   }
 
-  async evaluate(expression: string, tabId?: number): Promise<unknown> {
-    return await this.send('evaluate', { expression, tabId });
+  async evaluate(expression: string, tabId?: number, frameId?: number): Promise<unknown> {
+    return await this.send('evaluate', { expression, tabId, frameId });
   }
 
   async waitForSelector(
