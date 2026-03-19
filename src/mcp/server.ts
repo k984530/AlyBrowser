@@ -4305,7 +4305,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ filled, skipped });
     })()`, tabId, frameId);
 
-    const parsed = safeJsonParse(result);
+    const parsed = safeJsonParse(result) as { filled: Array<Record<string, string>>; skipped: Array<Record<string, string>> };
     const lines = [
       `[Form Fill] ${parsed.filled.length} filled, ${parsed.skipped.length} skipped`,
     ];
@@ -4514,7 +4514,7 @@ export class AlyBrowserMCPServer {
     try {
       const bridge = this.sessions.get(sessionId);
       if (bridge?.isConnected) {
-        const href = await bridge.evaluate('location.href', tabId, frameId);
+        const href = await bridge.evaluate('location.href', tabId);
         return typeof href === 'string' ? href : String(href);
       }
     } catch {
@@ -4774,16 +4774,17 @@ export class AlyBrowserMCPServer {
       return textResult('[WebSocket Monitor] Not installed. Call with action="start" first.');
     }
 
-    if (data.messages.length === 0) {
-      const connInfo = data.connections.map(
-        (c: { id: number; url: string; readyState: number }) =>
-          `  #${c.id} ${c.url} (${c.readyState === 1 ? 'OPEN' : 'CLOSED'})`,
+    const messages = data.messages as Array<Record<string, unknown>>;
+    const connections = data.connections as Array<{ id: number; url: string; readyState: number }>;
+    if (messages.length === 0) {
+      const connInfo = connections.map(
+        (c) => `  #${c.id} ${c.url} (${c.readyState === 1 ? 'OPEN' : 'CLOSED'})`,
       ).join('\n');
-      return textResult(`[WebSocket Monitor] ${data.connections.length} connection(s), no new messages.\n${connInfo}`);
+      return textResult(`[WebSocket Monitor] ${connections.length} connection(s), no new messages.\n${connInfo}`);
     }
 
-    const lines = [`[WebSocket Monitor] ${data.connections.length} connection(s), ${data.total} messages`];
-    for (const conn of data.connections as Array<{ id: number; url: string; readyState: number }>) {
+    const lines = [`[WebSocket Monitor] ${connections.length} connection(s), ${data.total} messages`];
+    for (const conn of connections) {
       lines.push(`  #${conn.id} ${conn.url} (${conn.readyState === 1 ? 'OPEN' : 'CLOSED'})`);
     }
     lines.push('');
@@ -4891,12 +4892,13 @@ export class AlyBrowserMCPServer {
       return textResult('[Fetch Intercept] Not installed. Call with action="start" first.');
     }
 
-    if (data.requests.length === 0) {
+    const requests = data.requests as Array<{ method: string; url: string; status: number; reqBody: string; resBody: string; duration: number }>;
+    if (requests.length === 0) {
       return textResult(`[Fetch Intercept] No${filter ? ` matching (filter: "${filter}")` : ''} requests captured.`);
     }
 
     const lines = [`[Fetch Intercept] ${data.total} request(s)${filter ? ` (filter: "${filter}")` : ''}`];
-    for (const req of (data.requests as Array<{ method: string; url: string; status: number; reqBody: string; resBody: string; duration: number }>).slice(-20)) {
+    for (const req of requests.slice(-20)) {
       const statusIcon = req.status >= 200 && req.status < 300 ? 'OK' : req.status === -1 ? 'ERR' : `${req.status}`;
       lines.push(`  ${req.method} ${req.url} → ${statusIcon} (${req.duration}ms)`);
       if (req.reqBody) lines.push(`    req: ${req.reqBody}`);
