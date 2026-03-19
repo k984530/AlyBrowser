@@ -216,7 +216,7 @@ async function handleCommand(cmd) {
     case 'frameList': return handleFrameList(tabId);
 
     // JavaScript
-    case 'evaluate': return handleEvaluate(params, tabId);
+    case 'evaluate': return handleEvaluate(params, tabId, frameId);
 
     // Tabs
     case 'tabList': return handleTabList();
@@ -302,13 +302,16 @@ async function handleGoForward(tabId) {
 
 // ── JavaScript Evaluation ───────────────────────────────────
 
-async function handleEvaluate(params, tabId) {
+async function handleEvaluate(params, tabId, frameId) {
   const target = tabId || activeTabId;
+  const scriptTarget = frameId != null
+    ? { tabId: target, frameIds: [frameId] }
+    : { tabId: target };
   // Try MAIN world first (works on most sites), fall back to ISOLATED if CSP blocks eval
   for (const world of ['MAIN', 'ISOLATED']) {
     try {
       const results = await chrome.scripting.executeScript({
-        target: { tabId: target },
+        target: scriptTarget,
         world,
         func: async (expr) => {
           try {
