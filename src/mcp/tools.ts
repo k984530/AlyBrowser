@@ -137,7 +137,7 @@ export const tools: ToolDefinition[] = [
           type: 'string',
           description: 'JavaScript expression to evaluate',
         },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['expression'],
@@ -557,7 +557,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -571,7 +571,7 @@ export const tools: ToolDefinition[] = [
       'Reports granted/denied/prompt status for each.',
     inputSchema: {
       type: 'object',
-      properties: { ...tabIdProp, ...sessionIdProp },
+      properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp },
     },
   },
 
@@ -583,7 +583,7 @@ export const tools: ToolDefinition[] = [
       'app state, and cached data in PWAs and SPAs.',
     inputSchema: {
       type: 'object',
-      properties: { ...tabIdProp, ...sessionIdProp },
+      properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp },
     },
   },
 
@@ -595,7 +595,7 @@ export const tools: ToolDefinition[] = [
       'scope, script URL, and cache names. Useful for debugging PWA issues.',
     inputSchema: {
       type: 'object',
-      properties: { ...tabIdProp, ...sessionIdProp },
+      properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp },
     },
   },
 
@@ -607,7 +607,7 @@ export const tools: ToolDefinition[] = [
       'Reports existing hints and suggests missing ones for critical resources.',
     inputSchema: {
       type: 'object',
-      properties: { ...tabIdProp, ...sessionIdProp },
+      properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp },
     },
   },
 
@@ -619,7 +619,7 @@ export const tools: ToolDefinition[] = [
       'dimensions, autoplay status, and duration.',
     inputSchema: {
       type: 'object',
-      properties: { ...tabIdProp, ...sessionIdProp },
+      properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp },
     },
   },
   // ── XPath Query ─────────────────────────────────────────
@@ -632,7 +632,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         xpath: { type: 'string', description: 'XPath expression (e.g., "//h2[contains(text(),\\"Price\\")]")' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['xpath'],
@@ -648,7 +648,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -665,7 +665,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         text: { type: 'string', description: 'Visible text to find the element by' },
         selector: { type: 'string', description: 'Partial CSS selector to refine' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -680,7 +680,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -695,7 +695,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -710,7 +710,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -725,7 +725,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -741,7 +741,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         selector: { type: 'string', description: 'CSS selector of elements to remove' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['selector'],
@@ -757,7 +757,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -865,7 +865,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         selector: { type: 'string', description: 'CSS selector to inspect (default: scan common interactive elements)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -880,7 +880,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -897,7 +897,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         maxScrolls: { type: 'number', description: 'Max scroll iterations (default: 10)' },
         waitMs: { type: 'number', description: 'Wait between scrolls in ms (default: 1500)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -915,7 +915,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         path: { type: 'string', description: 'Piercing path (e.g., "my-component >>> .inner-btn")' },
         action: { type: 'string', enum: ['query', 'click', 'text'], description: 'query (default), click, or get text' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['path'],
@@ -931,7 +931,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -941,12 +941,12 @@ export const tools: ToolDefinition[] = [
   {
     name: 'browser_scroll_to_bottom',
     description: 'Scroll to the very bottom of the page. Useful for loading lazy content or infinite scroll.',
-    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp } },
   },
   {
     name: 'browser_scroll_to_top',
     description: 'Scroll to the top of the page.',
-    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp } },
   },
   {
     name: 'browser_get_url',
@@ -965,7 +965,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         selector: { type: 'string', description: 'CSS selector' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['selector'],
@@ -974,7 +974,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'browser_blur',
     description: 'Remove focus from the currently focused element. Triggers blur events.',
-    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp } },
   },
   {
     name: 'browser_press_key',
@@ -983,7 +983,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         key: { type: 'string', description: 'Key name (e.g., "Enter", "Escape", "Tab", "ArrowDown")' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['key'],
@@ -1004,12 +1004,12 @@ export const tools: ToolDefinition[] = [
   {
     name: 'browser_page_info',
     description: 'Get basic page information: URL, title, domain, protocol, viewport size, scroll position.',
-    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp } },
   },
   {
     name: 'browser_element_count',
     description: 'Get total number of DOM elements on the page. Quick complexity check.',
-    inputSchema: { type: 'object', properties: { ...tabIdProp, ...sessionIdProp } },
+    inputSchema: { type: 'object', properties: { ...tabIdProp, ...frameIdProp, ...sessionIdProp } },
   },
 
   // ── Advanced Click ───────────────────────────────────────
@@ -1034,7 +1034,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         selector: { type: 'string', description: 'CSS selector of target element' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['selector'],
@@ -1053,7 +1053,7 @@ export const tools: ToolDefinition[] = [
         selector: { type: 'string', description: 'CSS selector of target element(s)' },
         attribute: { type: 'string', description: 'Attribute name (e.g., "disabled", "href", "data-id")' },
         value: { type: 'string', description: 'Value to set (omit to remove the attribute)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['selector', 'attribute'],
@@ -1072,7 +1072,7 @@ export const tools: ToolDefinition[] = [
         selector: { type: 'string', description: 'CSS selector to highlight' },
         action: { type: 'string', enum: ['add', 'clear'], description: 'add (default) or clear all highlights' },
         color: { type: 'string', description: 'Highlight color (default: "red")' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1087,7 +1087,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1104,7 +1104,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         selector: { type: 'string', description: 'CSS selector of target element' },
         block: { type: 'string', enum: ['start', 'center', 'end', 'nearest'], description: 'Vertical alignment (default: center)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['selector'],
@@ -1125,7 +1125,7 @@ export const tools: ToolDefinition[] = [
           items: { type: 'string' },
           description: 'Array of CSS selectors to count (e.g., [".product", ".error", "input:checked"])',
         },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['selectors'],
@@ -1143,7 +1143,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         source: { type: 'string', description: 'CSS selector of drag source element' },
         target: { type: 'string', description: 'CSS selector of drop target element' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['source', 'target'],
@@ -1161,7 +1161,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         pattern: { type: 'string', description: 'URL pattern to match (substring, or /regex/)' },
         timeout: { type: 'number', description: 'Max wait ms (default: 15000)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['pattern'],
@@ -1180,7 +1180,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         selector: { type: 'string', description: 'CSS selector to match elements (e.g., "input[type=checkbox]:not(:checked)")' },
         limit: { type: 'number', description: 'Max elements to click (default: 20, safety limit)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['selector'],
@@ -1198,7 +1198,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['detect', 'remove'], description: 'detect (default) or remove' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1215,7 +1215,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Text to search for' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['query'],
@@ -1231,7 +1231,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1247,7 +1247,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1267,7 +1267,7 @@ export const tools: ToolDefinition[] = [
         alert: { type: 'string', enum: ['accept', 'dismiss'], description: 'Auto-response for alert() (default: accept)' },
         confirm: { type: 'string', enum: ['accept', 'dismiss'], description: 'Auto-response for confirm() (default: accept)' },
         promptValue: { type: 'string', description: 'Auto-response value for prompt() (default: empty string)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1285,7 +1285,7 @@ export const tools: ToolDefinition[] = [
         action: { type: 'string', enum: ['inject', 'remove', 'list'], description: 'inject (default), remove, or list active overrides' },
         css: { type: 'string', description: 'CSS rules to inject (for inject action)' },
         id: { type: 'string', description: 'Override ID to remove (for remove action)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1304,7 +1304,7 @@ export const tools: ToolDefinition[] = [
         action: { type: 'string', enum: ['get', 'set', 'delete', 'clear', 'list'], description: 'Action (default: list)' },
         key: { type: 'string', description: 'Key for get/set/delete' },
         value: { type: 'string', description: 'Value for set' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1323,7 +1323,7 @@ export const tools: ToolDefinition[] = [
         text: { type: 'string', description: 'Text to wait for' },
         hidden: { type: 'boolean', description: 'Wait for text to disappear instead (default: false)' },
         timeout: { type: 'number', description: 'Max wait ms (default: 10000)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['text'],
@@ -1340,7 +1340,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1372,7 +1372,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1421,7 +1421,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1438,7 +1438,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['start', 'read', 'stop'], description: 'start, read (default), or stop' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1455,7 +1455,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         sections: { type: 'number', description: 'Number of vertical sections to divide page into (default: 5)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1471,7 +1471,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['detect', 'dark', 'light'], description: 'detect (default), dark (emulate dark), light (emulate light)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1494,7 +1494,7 @@ export const tools: ToolDefinition[] = [
         },
         width: { type: 'number', description: 'Custom viewport width (overrides preset)' },
         height: { type: 'number', description: 'Custom viewport height (overrides preset)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1510,7 +1510,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1526,7 +1526,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         index: { type: 'number', description: 'Table index (0-based, default: 0). Use -1 for all tables.' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1541,7 +1541,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         filter: { type: 'string', enum: ['all', 'internal', 'external'], description: 'Filter by link type (default: all)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1555,7 +1555,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1572,7 +1572,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         selector: { type: 'string', description: 'CSS selector (e.g., "#login-btn", ".header h1", "input[name=email]")' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['selector'],
@@ -1589,7 +1589,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1606,7 +1606,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         level: { type: 'string', enum: ['all', 'error', 'warn', 'info', 'log'], description: 'Filter by log level (default: all)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1622,7 +1622,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         filter: { type: 'string', description: 'Filter URLs containing this string (optional)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1642,7 +1642,7 @@ export const tools: ToolDefinition[] = [
           type: 'object',
           description: 'Key-value pairs to fill. Keys: email, name, firstName, lastName, phone, address, city, zip, country, company, password, username, or any field name/id.',
         },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
       required: ['data'],
@@ -1656,7 +1656,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1673,7 +1673,7 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1793,7 +1793,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['start', 'read', 'stop'], description: 'start, read (default), or stop' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
@@ -1813,7 +1813,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         action: { type: 'string', enum: ['start', 'read', 'stop'], description: 'start, read (default), or stop' },
         filter: { type: 'string', description: 'Filter requests by URL substring (optional)' },
-        ...tabIdProp,
+        ...tabIdProp, ...frameIdProp,
         ...sessionIdProp,
       },
     },
