@@ -190,26 +190,34 @@ export class AlyBrowserMCPServer {
       try {
         const result = await this.handleTool(name, typedArgs);
 
-        if (AUTO_LEARN_TOOLS.has(name)) {
-          const sessionId = this.getSessionId(typedArgs);
-          const url = await this.getCurrentUrl(sessionId, typedArgs.tabId as number | undefined);
-          if (url) {
-            if (result.isError) {
-              this.recordFailure(url, name, result.content[0]?.text ?? 'Unknown error');
-            } else {
-              this.recordRecovery(url, name, this.summarizeArgs(name, typedArgs));
+        try {
+          if (AUTO_LEARN_TOOLS.has(name)) {
+            const sessionId = this.getSessionId(typedArgs);
+            const url = await this.getCurrentUrl(sessionId, typedArgs.tabId as number | undefined);
+            if (url) {
+              if (result.isError) {
+                this.recordFailure(url, name, result.content[0]?.text ?? 'Unknown error');
+              } else {
+                this.recordRecovery(url, name, this.summarizeArgs(name, typedArgs));
+              }
             }
           }
+        } catch {
+          // Auto-learn recording should never prevent result delivery
         }
 
         return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
 
-        if (AUTO_LEARN_TOOLS.has(name)) {
-          const sessionId = this.getSessionId(typedArgs);
-          const url = await this.getCurrentUrl(sessionId, typedArgs.tabId as number | undefined);
-          if (url) this.recordFailure(url, name, message);
+        try {
+          if (AUTO_LEARN_TOOLS.has(name)) {
+            const sessionId = this.getSessionId(typedArgs);
+            const url = await this.getCurrentUrl(sessionId, typedArgs.tabId as number | undefined);
+            if (url) this.recordFailure(url, name, message);
+          }
+        } catch {
+          // Auto-learn recording should never prevent error propagation
         }
 
         return errorResult(message);
