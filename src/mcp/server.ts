@@ -687,7 +687,7 @@ export class AlyBrowserMCPServer {
     this.sessions.set(sessionId, bridge);
 
     if (args.url) {
-      const url = args.url as string;
+      const url = this.requireString(args, 'url');
       const kKey = this.knowledgeKey(url);
       const knowledge = this.siteKnowledge.formatForContext(url);
       const prefix = knowledge ? `${knowledge}\n\n` : '';
@@ -971,10 +971,8 @@ export class AlyBrowserMCPServer {
 
   private async handleCookieGet(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
-    const cookies = await bridge.cookieGet(
-      args.url as string,
-      args.name as string | undefined,
-    );
+    const url = this.requireString(args, 'url');
+    const cookies = await bridge.cookieGet(url, args.name as string | undefined);
     return jsonResult(cookies);
   }
 
@@ -4357,10 +4355,10 @@ export class AlyBrowserMCPServer {
   // ── Site Knowledge ─────────────────────────────────────────
 
   private async handleLearn(args: Record<string, unknown>): Promise<ToolResult> {
-    const url = args.url as string;
-    const action = args.action as string;
-    const result = args.result as string;
-    const note = args.note as string;
+    const url = this.requireString(args, 'url');
+    const action = this.requireString(args, 'action');
+    const result = this.requireString(args, 'result');
+    const note = this.requireString(args, 'note');
     if (result !== 'success' && result !== 'fail') {
       return errorResult(`Invalid result: "${result}". Must be "success" or "fail".`);
     }
@@ -4437,7 +4435,9 @@ export class AlyBrowserMCPServer {
         const href = await bridge.evaluate('location.href', tabId);
         return typeof href === 'string' ? href : String(href);
       }
-    } catch {}
+    } catch {
+      // Bridge may not be connected yet — fall through to null
+    }
     return null;
   }
 
@@ -4926,7 +4926,7 @@ export class AlyBrowserMCPServer {
     const url = (args.url as string) || await this.getCurrentUrl(sessionId, tabId) || 'unknown';
 
     const snapshot = await bridge.snapshot(tabId, frameId);
-    const watch = this.pageWatcher.addWatch(url, sessionId, snapshot);
+    const watch = this.pageWatcher.addWatch(url, sessionId, snapshot, { tabId, frameId });
 
     return textResult(
       `[Watch Started] ${watch.id}\n  URL: ${url}\n  Session: ${sessionId}\n  Initial snapshot captured (${snapshot.split('\n').length} lines)`,
@@ -4941,8 +4941,9 @@ export class AlyBrowserMCPServer {
     const bridge = this.sessions.get(watch.sessionId);
     if (!bridge?.isConnected) return errorResult(`Session "${watch.sessionId}" not connected`);
 
-    const tabId = args.tabId as number | undefined;
-    const frameId = args.frameId as number | undefined;
+    // Reuse tabId/frameId from watch_start to ensure we check the same context
+    const tabId = (args.tabId as number | undefined) ?? watch.tabId;
+    const frameId = (args.frameId as number | undefined) ?? watch.frameId;
     const newSnapshot = await bridge.snapshot(tabId, frameId);
     const change = this.pageWatcher.checkWatch(watchId, newSnapshot);
 
@@ -5004,6 +5005,9 @@ export class AlyBrowserMCPServer {
         }
       })(),
     ]);
+
+    if (!fileA || typeof fileA !== 'string') return errorResult(`Failed to capture screenshot for session "${sessionA}"`);
+    if (!fileB || typeof fileB !== 'string') return errorResult(`Failed to capture screenshot for session "${sessionB}"`);
 
     const result = compareScreenshots(fileA, fileB);
     const lines = [

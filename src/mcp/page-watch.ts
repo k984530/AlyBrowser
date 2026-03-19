@@ -11,6 +11,10 @@ export interface WatchTarget {
   url: string;
   /** Session ID */
   sessionId: string;
+  /** Tab ID used for initial snapshot */
+  tabId?: number;
+  /** Frame ID used for initial snapshot */
+  frameId?: number;
   /** Last snapshot */
   lastSnapshot: string;
   /** Last check timestamp */
@@ -35,12 +39,14 @@ export class PageWatcher {
   private maxChanges = 100;
 
   /** Add a URL to watch list */
-  addWatch(url: string, sessionId: string, initialSnapshot: string): WatchTarget {
+  addWatch(url: string, sessionId: string, initialSnapshot: string, options?: { tabId?: number; frameId?: number }): WatchTarget {
     const id = `watch-${this.nextId++}`;
     const target: WatchTarget = {
       id,
       url,
       sessionId,
+      tabId: options?.tabId,
+      frameId: options?.frameId,
       lastSnapshot: initialSnapshot,
       lastCheckedAt: Date.now(),
       changeCount: 0,
