@@ -39,12 +39,30 @@ async function handleCommand(cmd) {
 // ── Snapshot (Accessibility-like tree) ───────────────────────
 
 let snapshotInProgress = false;
+let snapshotQueue = null; // Promise for waiting callers
 
 function buildSnapshot() {
-  // Guard against concurrent snapshot requests overwriting refMap mid-walk
   if (snapshotInProgress) {
-    throw new Error('Snapshot already in progress');
+    // Wait for current snapshot to finish, then build a fresh one
+    if (!snapshotQueue) {
+      snapshotQueue = new Promise((resolve, reject) => {
+        const check = () => {
+          if (!snapshotInProgress) {
+            snapshotQueue = null;
+            try { resolve(buildSnapshotInternal()); } catch (e) { reject(e); }
+          } else {
+            setTimeout(check, 10);
+          }
+        };
+        setTimeout(check, 10);
+      });
+    }
+    return snapshotQueue;
   }
+  return buildSnapshotInternal();
+}
+
+function buildSnapshotInternal() {
   snapshotInProgress = true;
   try {
     refMap = new Map();
@@ -97,6 +115,12 @@ function walkDOM(node, depth, lines) {
     // Traverse into open Shadow DOM (closed shadow roots return null)
     if (el.shadowRoot) {
       walkDOM(el.shadowRoot, depth + 1, lines);
+    } else if (el.tagName?.includes('-') && !el.shadowRoot && el.attachShadow !== undefined) {
+      // Custom element without accessible shadow root — likely closed mode
+      const childCount = el.children.length;
+      if (childCount === 0) {
+        lines.push(`${'  '.repeat(depth + 1)}[shadow-root closed]`);
+      }
     }
   }
 }
@@ -245,10 +269,13 @@ function handleClick(ref) {
   el.dispatchEvent(new MouseEvent('mouseenter', { ...opts, bubbles: false }));
   el.dispatchEvent(new PointerEvent('pointerdown', { ...opts, button: 0, buttons: 1 }));
   el.dispatchEvent(new MouseEvent('mousedown', { ...opts, button: 0, buttons: 1 }));
-  el.focus?.();
-  el.dispatchEvent(new PointerEvent('pointerup', opts));
-  el.dispatchEvent(new MouseEvent('mouseup', opts));
-  el.dispatchEvent(new MouseEvent('click', opts));
+  // Focus after mousedown — matches real user behavior (mousedown → focus → mouseup → click)
+  if (el.focus && typeof el.focus === 'function') {
+    try { el.focus(); } catch {}
+  }
+  el.dispatchEvent(new PointerEvent('pointerup', { ...opts, button: 0, buttons: 0 }));
+  el.dispatchEvent(new MouseEvent('mouseup', { ...opts, button: 0, buttons: 0 }));
+  el.dispatchEvent(new MouseEvent('click', { ...opts, button: 0 }));
 
   return { ok: true };
 }
@@ -294,8 +321,26 @@ function handleType(params) {
       sel.collapseToEnd();
     }
 
+    // Dispatch beforeinput first — required by Slate.js, ProseMirror, Draft.js
+    el.dispatchEvent(new InputEvent('beforeinput', {
+      bubbles: true, cancelable: true, inputType: 'insertText', data: params.text,
+    }));
+
     // Insert text via execCommand — triggers framework's input listeners
-    document.execCommand('insertText', false, params.text);
+    const ok = document.execCommand('insertText', false, params.text);
+
+    if (!ok) {
+      // Fallback for frameworks that block execCommand: insert via Selection API
+      const sel = window.getSelection();
+      if (sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        range.insertNode(document.createTextNode(params.text));
+        range.collapse(false);
+      } else {
+        el.textContent = params.clear ? params.text : (el.textContent || '') + params.text;
+      }
+    }
 
     // Ensure framework detects the change
     el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: params.text }));
@@ -322,6 +367,11 @@ function handleType(params) {
     document.execCommand('selectAll', false, null);
     document.execCommand('delete', false, null);
   }
+
+  // Dispatch beforeinput — required by modern frameworks (React, Vue, Svelte)
+  el.dispatchEvent(new InputEvent('beforeinput', {
+    bubbles: true, cancelable: true, inputType: 'insertText', data: params.text,
+  }));
 
   // Use execCommand('insertText') — closest to real user typing
   const ok = document.execCommand('insertText', false, params.text);
@@ -352,6 +402,7 @@ function handleSelect(params) {
   if (!el) throw new Error(`Element ${params.ref} not found — page may have changed. Call browser_snapshot to get fresh ref IDs.`);
 
   el.value = params.value;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
   const selected = el.options?.[el.selectedIndex];
   return { ok: true, value: el.value, text: selected?.text };

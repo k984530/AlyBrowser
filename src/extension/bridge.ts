@@ -84,6 +84,9 @@ export class ExtensionBridge {
   }
 
   async launch(options?: { url?: string }): Promise<void> {
+    // Clean up stale session files from dead processes before starting
+    this.cleanupStaleSession();
+
     await this.startServer();
 
     // Strategy 1: Try connecting to an already-installed extension in user's Chrome (5s)
@@ -119,9 +122,19 @@ export class ExtensionBridge {
       const timeout = setTimeout(() => settle(false), timeoutMs);
 
       const onConnection = (ws: WebSocket, req: IncomingMessage) => {
+        if (settled || this._intentionalClose) {
+          ws.close();
+          return;
+        }
+
         if (!this.validateWsToken(req)) {
           ws.close(4001, 'Unauthorized');
           return;
+        }
+
+        // Close any existing stale WS before assigning new one
+        if (this.ws && this.ws !== ws) {
+          try { this.ws.removeAllListeners(); this.ws.close(); } catch {}
         }
 
         this.ws = ws;
@@ -138,7 +151,7 @@ export class ExtensionBridge {
         });
 
         ws.on('close', () => {
-          this.ws = null;
+          if (this.ws === ws) this.ws = null;
           settle(false);
         });
       };
@@ -295,6 +308,7 @@ export class ExtensionBridge {
       '--disable-infobars',
       '--window-size=1280,720',
       '--disable-features=PerfettoSystemTracing',
+      '--disable-tracing',
     ];
 
     if (fs.existsSync(path.join(this._extensionCopyDir, 'manifest.json'))) {
@@ -310,8 +324,14 @@ export class ExtensionBridge {
     // Allow Node.js to exit without waiting for Chrome
     this.chromeProcess.unref();
 
+    // Save Chrome PID for stale process cleanup on next launch
+    if (this.chromeProcess.pid) {
+      try { fs.writeFileSync(path.join(this._sessionDir, 'chrome-pid'), String(this.chromeProcess.pid)); } catch {}
+    }
+
     this.chromeProcess.on('exit', (code) => {
       this.chromeProcess = null;
+      try { fs.unlinkSync(path.join(this._sessionDir, 'chrome-pid')); } catch {}
       // Non-zero exit or signal kill = crash — trigger recovery
       if (code !== 0 && !this._intentionalClose) {
         log.warn(`Chrome exited with code ${code} — attempting recovery`);
@@ -322,7 +342,13 @@ export class ExtensionBridge {
     this.chromeProcess.stderr?.on('data', (c: Buffer) =>
       log.debug('chrome:', c.toString().trim()),
     );
-    this.chromeProcess.on('error', (e) => log.error('chrome error:', e.message));
+    this.chromeProcess.on('error', (e) => {
+      log.error('chrome error:', e.message);
+      // ENOENT = Chrome binary not found — no point in recovery
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+        this.chromeProcess = null;
+      }
+    });
   }
 
   private resolveExtensionDir(): string | null {
@@ -350,7 +376,7 @@ export class ExtensionBridge {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      this.wss!.removeListener('connection', onConnection);
+      if (this.wss) this.wss.removeListener('connection', onConnection);
       fn();
     };
 
@@ -361,7 +387,7 @@ export class ExtensionBridge {
     }, 30_000);
 
     const onConnection = (ws: WebSocket, req: IncomingMessage) => {
-      if (settled) {
+      if (settled || this._intentionalClose) {
         ws.close();
         return;
       }
@@ -369,6 +395,11 @@ export class ExtensionBridge {
       if (!this.validateWsToken(req)) {
         ws.close(4001, 'Unauthorized');
         return;
+      }
+
+      // Close any existing stale WS before assigning new one
+      if (this.ws && this.ws !== ws) {
+        try { this.ws.removeAllListeners(); this.ws.close(); } catch {}
       }
 
       log.debug('Extension connected (session:', this._sessionId, ')');
@@ -389,7 +420,7 @@ export class ExtensionBridge {
       ws.on('message', readyHandler);
 
       ws.on('close', () => {
-        this.ws = null;
+        if (this.ws === ws) this.ws = null;
         settle(() => deferred.reject(new Error('Extension disconnected during handshake')));
       });
     };
@@ -669,6 +700,8 @@ export class ExtensionBridge {
 
   // ── Crash Recovery ──────────────────────────────────────────
 
+  private _recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+
   private attemptRecovery(): void {
     if (this._recovering || this._intentionalClose) return;
     if (this._recoverAttempts >= this._maxRecoverAttempts) {
@@ -681,25 +714,35 @@ export class ExtensionBridge {
     const delay = Math.min(1000 * Math.pow(2, this._recoverAttempts - 1), 10_000);
     log.debug(`Recovery attempt ${this._recoverAttempts}/${this._maxRecoverAttempts} in ${delay}ms`);
 
-    setTimeout(() => {
+    this._recoveryTimer = setTimeout(() => {
+      this._recoveryTimer = null;
+      if (this._intentionalClose) {
+        this._recovering = false;
+        return;
+      }
       this.recover().catch((err) => {
         log.error('Recovery failed:', err instanceof Error ? err.message : String(err));
         this._recovering = false;
-        // Retry if attempts remain
+        // Retry if attempts remain (guard re-checked inside attemptRecovery)
         this.attemptRecovery();
       });
     }, delay);
   }
 
   private async recover(): Promise<void> {
-    // Save current tab URLs before recovery (if available from last known state)
     log.debug('Recovering session:', this._sessionId);
 
     // Close stale WS connection
     if (this.ws) {
-      try { this.ws.close(); } catch {}
+      try { this.ws.removeAllListeners(); this.ws.close(); } catch {}
       this.ws = null;
     }
+
+    // Reject any lingering pending requests from the crashed session
+    for (const [, d] of this.pending) {
+      d.reject(new Error('Session recovering'));
+    }
+    this.pending.clear();
 
     // Re-prepare extension with current port + token (reuses existing WS server)
     this.prepareSessionExtension();
@@ -717,8 +760,22 @@ export class ExtensionBridge {
 
   // ── Cleanup ─────────────────────────────────────────────────
 
-  async close(): Promise<void> {
+  async close(options?: { cleanProfile?: boolean }): Promise<void> {
     this._intentionalClose = true;
+    this._recovering = false;
+
+    // Cancel any pending recovery timer
+    if (this._recoveryTimer) {
+      clearTimeout(this._recoveryTimer);
+      this._recoveryTimer = null;
+    }
+
+    // Reject all pending requests before closing WS
+    for (const [, d] of this.pending) {
+      d.reject(new Error('Bridge closing'));
+    }
+    this.pending.clear();
+
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -754,7 +811,94 @@ export class ExtensionBridge {
     try { fs.unlinkSync(path.join(this._sessionDir, 'port')); } catch {}
     try { fs.unlinkSync(path.join(this._sessionDir, 'pid')); } catch {}
     try { fs.unlinkSync(path.join(this._sessionDir, 'token')); } catch {}
+    try { fs.unlinkSync(path.join(this._sessionDir, 'chrome-pid')); } catch {}
     // Clean up extension copy (port-specific, recreated on next launch)
     try { fs.rmSync(this._extensionCopyDir, { recursive: true, force: true }); } catch {}
+
+    // Optionally clean up profile directory
+    if (options?.cleanProfile) {
+      try { fs.rmSync(this._profileDir, { recursive: true, force: true }); } catch {}
+    }
+  }
+
+  // ── Stale Session Cleanup ──────────────────────────────────
+
+  /** Check if a PID is still running */
+  private static isProcessAlive(pid: number): boolean {
+    try {
+      process.kill(pid, 0); // Signal 0 = existence check only
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Clean up stale files from a previous session that crashed or was killed */
+  private cleanupStaleSession(): void {
+    const pidFile = path.join(this._sessionDir, 'pid');
+    const chromePidFile = path.join(this._sessionDir, 'chrome-pid');
+
+    // Check if a previous MCP server PID exists and is dead
+    try {
+      const oldPid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+      if (oldPid && oldPid !== process.pid && !ExtensionBridge.isProcessAlive(oldPid)) {
+        log.debug(`Cleaning up stale session "${this._sessionId}" (dead PID ${oldPid})`);
+        // Kill orphaned Chrome process if still running
+        try {
+          const chromePid = parseInt(fs.readFileSync(chromePidFile, 'utf-8').trim(), 10);
+          if (chromePid && ExtensionBridge.isProcessAlive(chromePid)) {
+            log.debug(`Killing orphaned Chrome process ${chromePid}`);
+            try { process.kill(-chromePid, 'SIGTERM'); } catch {
+              try { process.kill(chromePid, 'SIGTERM'); } catch {}
+            }
+          }
+        } catch {}
+        // Remove stale files so port is freed
+        try { fs.unlinkSync(path.join(this._sessionDir, 'port')); } catch {}
+        try { fs.unlinkSync(pidFile); } catch {}
+        try { fs.unlinkSync(path.join(this._sessionDir, 'token')); } catch {}
+        try { fs.unlinkSync(chromePidFile); } catch {}
+        try { fs.rmSync(this._extensionCopyDir, { recursive: true, force: true }); } catch {}
+      }
+    } catch {
+      // No PID file = no stale session
+    }
+  }
+
+  /** Clean up ALL stale sessions (call at MCP server startup) */
+  static cleanupAllStaleSessions(): void {
+    try {
+      if (!fs.existsSync(SESSIONS_DIR)) return;
+      for (const dir of fs.readdirSync(SESSIONS_DIR)) {
+        const sessionDir = path.join(SESSIONS_DIR, dir);
+        if (!fs.statSync(sessionDir).isDirectory()) continue;
+        const pidFile = path.join(sessionDir, 'pid');
+        const chromePidFile = path.join(sessionDir, 'chrome-pid');
+
+        try {
+          const oldPid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+          if (!oldPid || ExtensionBridge.isProcessAlive(oldPid)) continue;
+
+          log.debug(`Stale session cleanup: "${dir}" (dead PID ${oldPid})`);
+          // Kill orphaned Chrome
+          try {
+            const chromePid = parseInt(fs.readFileSync(chromePidFile, 'utf-8').trim(), 10);
+            if (chromePid && ExtensionBridge.isProcessAlive(chromePid)) {
+              try { process.kill(-chromePid, 'SIGTERM'); } catch {
+                try { process.kill(chromePid, 'SIGTERM'); } catch {}
+              }
+            }
+          } catch {}
+          // Clean stale files
+          try { fs.unlinkSync(path.join(sessionDir, 'port')); } catch {}
+          try { fs.unlinkSync(pidFile); } catch {}
+          try { fs.unlinkSync(path.join(sessionDir, 'token')); } catch {}
+          try { fs.unlinkSync(chromePidFile); } catch {}
+          try { fs.rmSync(path.join(sessionDir, 'extension'), { recursive: true, force: true }); } catch {}
+        } catch {
+          // No PID file = skip
+        }
+      }
+    } catch {}
   }
 }

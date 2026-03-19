@@ -39,14 +39,26 @@ function connect() {
     if (tabs[0]) {
       activeTabId = tabs[0].id;
     } else {
-      const tab = await chrome.tabs.create({ url: 'about:blank' });
-      activeTabId = tab.id;
+      // Try any existing tab before creating a new one
+      const allTabs = await chrome.tabs.query({ currentWindow: true });
+      if (allTabs[0]) {
+        activeTabId = allTabs[0].id;
+      } else {
+        const tab = await chrome.tabs.create({ url: 'about:blank' });
+        activeTabId = tab.id;
+      }
     }
     ws.send(JSON.stringify({ type: 'ready', tabId: activeTabId }));
   };
 
   ws.onmessage = async (event) => {
-    const cmd = JSON.parse(event.data);
+    let cmd;
+    try {
+      cmd = JSON.parse(event.data);
+    } catch {
+      console.warn('[aly] Malformed WS message:', String(event.data).slice(0, 100));
+      return;
+    }
     if (cmd.type === 'ping') return;
 
     let response;
@@ -149,6 +161,18 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   contentReady.delete(tabId);  // Removes entire Set for this tab
   if (tabId === activeTabId) {
     activeTabId = null;
+  }
+});
+
+// Track manual navigations (user typing URL, clicking links, etc.)
+// so contentReady is properly cleared before new content script loads
+chrome.webNavigation.onCommitted.addListener((details) => {
+  // Only reset for main navigations, not hash changes or subframes unless frameId targeted
+  if (details.transitionType !== 'auto_subframe') {
+    const frames = contentReady.get(details.tabId);
+    if (frames) {
+      frames.delete(details.frameId);
+    }
   }
 });
 
@@ -255,7 +279,7 @@ async function handleGoBack(tabId) {
   const target = tabId || activeTabId;
   contentReady.delete(target);
   await chrome.tabs.goBack(target);
-  await waitForContentScript(target, 10000).catch(() => {});
+  await waitForContentScript(target, 30000).catch(() => {});
   return { ok: true };
 }
 
@@ -263,7 +287,7 @@ async function handleGoForward(tabId) {
   const target = tabId || activeTabId;
   contentReady.delete(target);
   await chrome.tabs.goForward(target);
-  await waitForContentScript(target, 10000).catch(() => {});
+  await waitForContentScript(target, 30000).catch(() => {});
   return { ok: true };
 }
 
@@ -616,11 +640,23 @@ function waitForContentScript(tabId, timeoutMs = 30000, frameId = 0) {
   });
 }
 
-function sendToContent(cmd, tabId, frameId) {
+async function sendToContent(cmd, tabId, frameId) {
   const targetTab = tabId || activeTabId;
-  return new Promise((resolve, reject) => {
-    if (!targetTab) { reject(new Error('No active tab')); return; }
+  if (!targetTab) throw new Error('No active tab');
 
+  const targetFrame = frameId ?? 0;
+
+  // Wait for content script to be ready if not already
+  const frames = contentReady.get(targetTab);
+  if (!frames || !frames.has(targetFrame)) {
+    try {
+      await waitForContentScript(targetTab, 5000, targetFrame);
+    } catch {
+      // Content script not ready — try sending anyway (it may respond)
+    }
+  }
+
+  return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error('Content script response timeout'));
     }, 30000);

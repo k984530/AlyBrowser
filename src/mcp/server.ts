@@ -84,6 +84,16 @@ function jsonResult(data: unknown): ToolResult {
   return textResult(JSON.stringify(data, null, 2));
 }
 
+/** Safely parse JSON from eval results. Returns parsed object or throws with context. */
+function safeJsonParse(result: unknown, context?: string): Record<string, unknown> {
+  try {
+    return typeof result === 'string' ? JSON.parse(result) : (result as Record<string, unknown>);
+  } catch {
+    const ctx = context ? `[${context}] ` : '';
+    throw new Error(`${ctx}Failed to parse eval result: ${String(result).slice(0, 200)}`);
+  }
+}
+
 export class AlyBrowserMCPServer {
   private sessions = new Map<string, ExtensionBridge>();
   private launching = new Set<string>();
@@ -95,6 +105,9 @@ export class AlyBrowserMCPServer {
   readonly server: Server;
 
   constructor() {
+    // Clean up stale sessions from crashed/killed previous server instances
+    ExtensionBridge.cleanupAllStaleSessions();
+
     this.server = new Server(
       { name: 'aly-browser', version: process.env.npm_package_version || '3.0.0' },
       {
@@ -1114,7 +1127,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof metrics === 'string' ? JSON.parse(metrics) : metrics;
+    const data = safeJsonParse(metrics, 'browser_perf_metrics');
 
     const lines = [
       `[Performance Metrics] ${data.title}`,
@@ -1162,7 +1175,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify(results);
     })()`, tabId);
 
-    const perms = typeof result === 'string' ? JSON.parse(result) : result;
+    const perms = safeJsonParse(result);
     const icon = (s: string) => s === 'granted' ? '✓' : s === 'denied' ? '✗' : s === 'prompt' ? '?' : '—';
     const lines = ['[Permissions]'];
     for (const p of perms) lines.push(`  ${icon(p.state)} ${p.name}: ${p.state}`);
@@ -1200,7 +1213,7 @@ export class AlyBrowserMCPServer {
       } catch (e) { return JSON.stringify({ supported: true, error: e.message }); }
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     if (!data.supported) return textResult(`[IndexedDB] ${data.note}`);
     if (data.error) return textResult(`[IndexedDB] Error: ${data.error}`);
     if (data.count === 0) return textResult('[IndexedDB] No databases found.');
@@ -1237,7 +1250,7 @@ export class AlyBrowserMCPServer {
       } catch (e) { return JSON.stringify({ supported: true, error: e.message }); }
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     if (!data.supported) return textResult('[Service Worker] Not supported in this context.');
     if (data.error) return textResult(`[Service Worker] Error: ${data.error}`);
     if (!data.registered) return textResult('[Service Worker] No Service Worker registered.');
@@ -1288,7 +1301,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ hints, total, suggestions: suggestions.slice(0, 5) });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = [`[Resource Hints] ${data.total} hints found`];
 
     for (const [type, list] of Object.entries(data.hints) as [string, any[]][]) {
@@ -1328,7 +1341,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ count: media.length, media: media.slice(0, 20) });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     if (data.count === 0) return textResult('[Media] No media elements found.');
     const lines = [`[Media] ${data.count} element(s)`];
     for (const m of data.media) {
@@ -1362,7 +1375,7 @@ export class AlyBrowserMCPServer {
       } catch (e) { return JSON.stringify({ error: e.message }); }
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     if (data.error) return errorResult(`XPath error: ${data.error}`);
     if (data.count === 0) return textResult(`[XPath] No matches for: ${xpath}`);
     const lines = [`[XPath] ${data.count} match(es)`];
@@ -1397,7 +1410,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ fb, tw, li, fbMissing, twMissing });
     })()`, tabId);
 
-    const d = typeof result === 'string' ? JSON.parse(result) : result;
+    const d = safeJsonParse(result);
     const lines = [
       '── Facebook ──',
       `  Title: ${d.fb.title || '(missing)'}`,
@@ -1480,7 +1493,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     if (data.error) return errorResult(data.error);
 
     const lines = [
@@ -1525,7 +1538,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ total: links.length, valid, issues: issues.slice(0, 20), issueCount: issues.length });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
 
     if (data.issueCount === 0) return textResult(`[Broken Links] All ${data.total} links valid.`);
 
@@ -1567,7 +1580,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ secure: true, issues, count: issues.length });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
 
     if (!data.secure) return textResult(`[Mixed Content] ${data.note}`);
     if (data.count === 0) return textResult('[Mixed Content] No mixed content detected. Page is fully HTTPS.');
@@ -1621,7 +1634,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const fmt = (b: number) => b > 1024 ? `${(b / 1024).toFixed(1)}KB` : `${b}B`;
 
     const lines = [
@@ -1679,7 +1692,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const icon = (g: string) => g === 'good' ? '✓' : g === 'needs-improvement' ? '△' : '✗';
 
     const lines = [
@@ -1710,7 +1723,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ removed: count });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     return textResult(`[Remove] ${data.removed} element(s) removed (${selector})`);
   }
 
@@ -1744,7 +1757,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = [
       `[CSS Coverage] ${data.coveragePct}% used (${data.usedRules}/${data.totalRules} rules)`,
       `  Stylesheets: ${data.stylesheets}`,
@@ -1874,7 +1887,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ ok: true, timezone: tz, localTime: now });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     if (data.error) return errorResult(data.error);
     return textResult(`[Timezone] Set to ${data.timezone} (current: ${data.localTime})`);
   }
@@ -1974,7 +1987,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ count: results.length, elements: results });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = [`[Event Listeners] ${data.count} interactive elements`];
     for (const el of data.elements.slice(0, 20)) {
       const evts = el.listeners.map((l: any) => `${l.type}(${l.source})`).join(', ');
@@ -2011,7 +2024,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = [
       `[Print Preview] "${data.title}"`,
       `  Estimated pages: ${data.estPages} (A4)`,
@@ -2057,7 +2070,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = [`[Infinite Scroll] ${data.scrolls} scrolls, ${data.totalElements} elements, ${data.finalHeight}px`];
     for (const s of data.log) {
       lines.push(`  #${s.scroll}: +${s.added} elements, ${s.height}px`);
@@ -2108,7 +2121,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     if (data.error) return errorResult(data.error);
     if (data.ok && data.action === 'clicked') return textResult(`[Shadow] Clicked <${data.tag}> via ${pathStr}`);
     if (data.ok && data.text !== undefined) return textResult(`[Shadow] Text: "${data.text}"`);
@@ -2141,7 +2154,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify(data);
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = ['[Structured Data]'];
 
     if (data.jsonLd.length) {
@@ -2237,7 +2250,11 @@ export class AlyBrowserMCPServer {
     const tabId = args.tabId as number | undefined;
     const frameId = args.frameId as number | undefined;
     await bridge.send('click', { ref, tabId, frameId });
-    await bridge.send('click', { ref, tabId, frameId });
+    try {
+      await bridge.send('click', { ref, tabId, frameId });
+    } catch {
+      // Element may have been removed/re-rendered after first click — acceptable for dblclick
+    }
     const snap = await bridge.snapshot(tabId, frameId);
     return textResult(`Double-clicked ${ref}\n\n${snap}`);
   }
@@ -2261,7 +2278,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ ok: true, tag: el.tagName.toLowerCase(), id: el.id || null });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     if (data.error) return errorResult(data.error);
     return textResult(`[Right Click] <${data.tag}${data.id ? '#' + data.id : ''}> (${selector})`);
   }
@@ -2289,7 +2306,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ count, action: ${value !== undefined} ? 'set' : 'removed' });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const verb = data.action === 'set' ? `set "${attribute}"="${value}"` : `removed "${attribute}"`;
     return textResult(`[Attribute] ${verb} on ${data.count} element(s) (${selector})`);
   }
@@ -2325,7 +2342,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ count, selector: ${JSON.stringify(selector)}, color: ${JSON.stringify(color)} });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     return textResult(`[Highlight] ${data.count} element(s) highlighted with ${data.color} (${data.selector})`);
   }
 
@@ -2369,7 +2386,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ title: document.title, url: location.href, wordCount, content: content.slice(0, 10000) });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = [
       `# ${data.title}`,
       `> Source: ${data.url}`,
@@ -2403,7 +2420,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     if (data.error) return errorResult(data.error);
     return textResult(`[Scroll] → <${data.tag}${data.id ? '#' + data.id : ''}> at y:${data.y} "${data.text}" (visible: ${data.visible})`);
   }
@@ -2426,7 +2443,7 @@ export class AlyBrowserMCPServer {
       }));
     })()`, tabId);
 
-    const counts = typeof result === 'string' ? JSON.parse(result) : result;
+    const counts = safeJsonParse(result);
     const lines = ['[Element Count]'];
     for (const c of counts) {
       lines.push(`  ${c.selector}: ${c.count}${c.error ? ' (invalid)' : ''}`);
@@ -2466,7 +2483,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     if (data.error) return errorResult(data.error);
     return textResult(`[Drag & Drop] ${data.source} → ${data.target}`);
   }
@@ -2512,7 +2529,7 @@ export class AlyBrowserMCPServer {
       check();
     })`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
 
     if (data.timedOut) {
       return errorResult(`URL pattern "${pattern}" not matched after ${data.elapsed}ms. Current: ${data.url}`);
@@ -2544,7 +2561,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ total: document.querySelectorAll(${JSON.stringify(selector)}).length, clicked: clicked.length, elements: clicked });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = [`[Click All] ${data.clicked}/${data.total} elements clicked (selector: ${selector})`];
     for (const el of data.elements.slice(0, 10)) {
       lines.push(`  <${el.tag}${el.id ? '#' + el.id : ''}> "${el.text}"`);
@@ -2604,7 +2621,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ action, found: blockers.length, blockers });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
 
     if (data.found === 0) return textResult('[Popup Blocker] No blocking overlays detected.');
 
@@ -2650,7 +2667,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ query: ${JSON.stringify(query)}, count: matches.length, matches });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
 
     if (data.count === 0) return textResult(`[Find] "${data.query}" — 0 matches`);
 
@@ -2690,7 +2707,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ families: sort(fonts), sizes: sort(sizes), weights: sort(weights), webFonts: webFonts.slice(0, 10) });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = ['[Font Analysis]'];
 
     if (data.families.length) {
@@ -2736,7 +2753,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ backgrounds: sort(colors.bg), textColors: sort(colors.text), borders: sort(colors.border) });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = ['[Color Palette]'];
 
     if (data.backgrounds.length) {
@@ -2786,7 +2803,7 @@ export class AlyBrowserMCPServer {
 
     if (action === 'history') {
       const result = await bridge.evaluate(`JSON.stringify(window.__alyDialogHistory || [])`, tabId);
-      const history = typeof result === 'string' ? JSON.parse(result) : result;
+      const history = safeJsonParse(result);
       if (!history || history.length === 0) return textResult('[Dialog Handler] No dialogs captured yet.');
 
       const lines = [`[Dialog Handler] ${history.length} dialog(s)`];
@@ -2798,7 +2815,7 @@ export class AlyBrowserMCPServer {
 
     // status
     const result = await bridge.evaluate(`JSON.stringify(window.__alyDialogConfig || null)`, tabId);
-    const config = typeof result === 'string' ? JSON.parse(result) : result;
+    const config = safeJsonParse(result);
     if (!config) return textResult('[Dialog Handler] Not configured. Use action="configure" to set auto-responses.');
     return textResult(`[Dialog Handler] Active: alert=${config.alert}, confirm=${config.confirm}, prompt="${config.prompt}"`);
   }
@@ -2826,7 +2843,7 @@ export class AlyBrowserMCPServer {
         document.head.appendChild(style);
         return JSON.stringify({ id, length: ${cssJson}.length });
       })()`, tabId);
-      const data = typeof result === 'string' ? JSON.parse(result) : result;
+      const data = safeJsonParse(result);
       return textResult(`[Style] Injected "${data.id}" (${data.length} chars)`);
     }
 
@@ -2841,7 +2858,7 @@ export class AlyBrowserMCPServer {
       const styles = [...document.querySelectorAll('style[data-aly-override]')];
       return JSON.stringify(styles.map(s => ({ id: s.id, length: (s.textContent || '').length, preview: (s.textContent || '').slice(0, 80) })));
     })()`, tabId);
-    const styles = typeof result === 'string' ? JSON.parse(result) : result;
+    const styles = safeJsonParse(result);
 
     if (styles.length === 0) return textResult('[Style] No active overrides');
     const lines = [`[Style] ${styles.length} active override(s)`];
@@ -2900,7 +2917,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ count: items.length, items });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
 
     if (data.ok) {
       if (action === 'set') return textResult(`[localStorage] Set "${data.key}" (${data.size} chars)`);
@@ -2954,7 +2971,7 @@ export class AlyBrowserMCPServer {
       check();
     })`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
 
     if (data.timedOut) {
       return errorResult(
@@ -3026,7 +3043,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const grade = data.score >= 90 ? 'A' : data.score >= 70 ? 'B' : data.score >= 50 ? 'C' : data.score >= 30 ? 'D' : 'F';
 
     const lines = [
@@ -3079,8 +3096,9 @@ export class AlyBrowserMCPServer {
 
     // Copy cookies from source — get all cookies via evaluate
     let copiedCount = 0;
+    let failedCount = 0;
+    const warnings: string[] = [];
     try {
-      const cookiesRaw = await source.evaluate('JSON.stringify(document.cookie)');
       const url = await source.evaluate('location.href');
       if (typeof url === 'string') {
         const allCookies = await source.cookieGet(url);
@@ -3089,18 +3107,30 @@ export class AlyBrowserMCPServer {
             try {
               await target.cookieSet(cookie as Record<string, unknown>);
               copiedCount++;
-            } catch {}
+            } catch (err) {
+              failedCount++;
+            }
           }
         }
       }
-    } catch {}
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      warnings.push(`Cookie copy failed: ${msg}`);
+    }
+    if (failedCount > 0) {
+      warnings.push(`${failedCount} cookie(s) failed to copy`);
+    }
 
-    return textResult(
-      `[Session Clone] "${sourceId}" → "${targetId}"\n` +
-      `  Cookies copied: ${copiedCount}\n` +
-      `  Target port: ${target.port}\n` +
-      (args.url ? `  Navigated to: ${args.url}` : '  Ready for navigation'),
-    );
+    const lines = [
+      `[Session Clone] "${sourceId}" → "${targetId}"`,
+      `  Cookies copied: ${copiedCount}`,
+      `  Target port: ${target.port}`,
+      args.url ? `  Navigated to: ${args.url}` : '  Ready for navigation',
+    ];
+    if (warnings.length) {
+      lines.push(`  Warnings: ${warnings.join('; ')}`);
+    }
+    return textResult(lines.join('\n'));
   }
 
   // ── Page Weight ───────────────────────────────────────────
@@ -3141,7 +3171,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const fmt = (b: number) => b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : b > 1024 ? `${(b / 1024).toFixed(1)} KB` : `${b} B`;
 
     const lines = [
@@ -3239,7 +3269,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ found: detections.length > 0, detections, url: location.href });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
 
     if (!data.found) {
       return textResult(`[CAPTCHA] No CAPTCHA detected on ${data.url}`);
@@ -3314,7 +3344,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
 
     if (data.status === 'started') {
       return textResult('[DOM Observer] Started. Use action="read" to get changes, "stop" to end.');
@@ -3391,7 +3421,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ pageHeight: docH, viewportHeight: window.innerHeight, sections });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = [
       `[Scroll Map] ${data.pageHeight}px page, ${data.viewportHeight}px viewport, ${numSections} sections`,
       '',
@@ -3461,7 +3491,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = [
       `[Dark Mode] ${action === 'detect' ? 'Detection' : 'Emulation → ' + action}`,
       `  System Preference: ${data.systemPreference}`,
@@ -3542,7 +3572,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const label = preset || `${data.viewport.width}x${data.viewport.height}`;
     const lines = [
       `[Viewport Test] ${label} (${data.viewport.width}x${data.viewport.height}, ${data.devicePixelRatio}x DPR)`,
@@ -3600,7 +3630,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ title: document.title, blocks: blocks.slice(0, 100), total: blocks.length });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = [`[Text Content] "${data.title}" — ${data.total} blocks`];
 
     for (const b of data.blocks) {
@@ -3657,7 +3687,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify(extractTable(tables[idx]));
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
 
     if (data.error) {
       return errorResult(data.error);
@@ -3707,7 +3737,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ total: imgs.length, broken, missingAlt, images: imgs.slice(0, 50) });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = [
       `[Images] ${data.total} images (${data.broken} broken, ${data.missingAlt} missing alt)`,
     ];
@@ -3740,7 +3770,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ total: links.length, filtered: filtered.length, links: filtered.slice(0, 100) });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const lines = [`[Links] ${data.filtered} links${filter !== 'all' ? ` (${filter})` : ''} of ${data.total} total`];
     for (const l of data.links) {
       const tag = l.type === 'internal' ? 'INT' : l.type === 'external' ? 'EXT' : 'FRG';
@@ -3797,7 +3827,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
 
     if (data.error) {
       return errorResult(data.error);
@@ -3875,7 +3905,7 @@ export class AlyBrowserMCPServer {
       });
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    const data = safeJsonParse(result);
     const issues: string[] = [];
 
     // Check for common SEO issues
@@ -3968,7 +3998,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify(logs);
     })()`, tabId);
 
-    const logs = typeof result === 'string' ? JSON.parse(result) : result;
+    const logs = safeJsonParse(result);
 
     if (!logs || logs.length === 0) {
       return textResult(`[Console] No messages${level !== 'all' ? ` (level: ${level})` : ''}. Interceptor installed — future messages will be captured.`);
@@ -4009,7 +4039,7 @@ export class AlyBrowserMCPServer {
       );
     })()`, tabId);
 
-    const entries = typeof result === 'string' ? JSON.parse(result) : result;
+    const entries = safeJsonParse(result);
 
     if (!entries || entries.length === 0) {
       return textResult(`[Network Log] No requests found${filter ? ` matching "${filter}"` : ''}.`);
@@ -4140,7 +4170,7 @@ export class AlyBrowserMCPServer {
       return JSON.stringify({ filled, skipped });
     })()`, tabId);
 
-    const parsed = typeof result === 'string' ? JSON.parse(result) : result;
+    const parsed = safeJsonParse(result);
     const lines = [
       `[Form Fill] ${parsed.filled.length} filled, ${parsed.skipped.length} skipped`,
     ];
@@ -4405,35 +4435,60 @@ export class AlyBrowserMCPServer {
   // ── Screen Tools ────────────────────────────────────────────
 
   private async handleScreenCapture(args: Record<string, unknown>): Promise<ToolResult> {
-    const filePath = screen.captureScreen({
-      windowTitle: args.windowTitle as string | undefined,
-    });
-    return {
-      content: [
-        { type: 'text', text: `Screenshot saved: ${filePath}` },
-        { type: 'text', text: `data:image/png;base64,${fs.readFileSync(filePath).toString('base64')}` },
-      ],
-    };
+    try {
+      const filePath = screen.captureScreen({
+        windowTitle: args.windowTitle as string | undefined,
+      });
+      return {
+        content: [
+          { type: 'text', text: `Screenshot saved: ${filePath}` },
+          { type: 'text', text: `data:image/png;base64,${fs.readFileSync(filePath).toString('base64')}` },
+        ],
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult(`Screen capture failed (${process.platform}): ${msg}`);
+    }
   }
 
   private async handleScreenClick(args: Record<string, unknown>): Promise<ToolResult> {
-    screen.clickAt(args.x as number, args.y as number, { double: args.double as boolean });
-    return textResult(`Clicked at (${args.x}, ${args.y})${args.double ? ' (double)' : ''}`);
+    try {
+      screen.clickAt(args.x as number, args.y as number, { double: args.double as boolean });
+      return textResult(`Clicked at (${args.x}, ${args.y})${args.double ? ' (double)' : ''}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult(`Screen click failed (${process.platform}): ${msg}`);
+    }
   }
 
   private async handleScreenType(args: Record<string, unknown>): Promise<ToolResult> {
-    screen.typeText(args.text as string);
-    return textResult(`Typed "${(args.text as string).slice(0, 50)}"`);
+    try {
+      screen.typeText(args.text as string);
+      return textResult(`Typed "${(args.text as string).slice(0, 50)}"`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult(`Screen type failed (${process.platform}): ${msg}`);
+    }
   }
 
   private async handleScreenKey(args: Record<string, unknown>): Promise<ToolResult> {
-    screen.pressKey(args.key as string, args.modifiers as string[] | undefined);
-    return textResult(`Pressed ${args.key}${args.modifiers ? ` + ${(args.modifiers as string[]).join('+')}` : ''}`);
+    try {
+      screen.pressKey(args.key as string, args.modifiers as string[] | undefined);
+      return textResult(`Pressed ${args.key}${args.modifiers ? ` + ${(args.modifiers as string[]).join('+')}` : ''}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult(`Screen key failed (${process.platform}): ${msg}`);
+    }
   }
 
   private async handleScreenScroll(args: Record<string, unknown>): Promise<ToolResult> {
-    screen.scroll(args.deltaY as number);
-    return textResult(`Scrolled ${(args.deltaY as number) > 0 ? 'down' : 'up'} by ${Math.abs(args.deltaY as number)}`);
+    try {
+      screen.scroll(args.deltaY as number);
+      return textResult(`Scrolled ${(args.deltaY as number) > 0 ? 'down' : 'up'} by ${Math.abs(args.deltaY as number)}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return errorResult(`Screen scroll failed (${process.platform}): ${msg}`);
+    }
   }
 
   // ── Cleanup ─────────────────────────────────────────────────
@@ -4446,6 +4501,8 @@ export class AlyBrowserMCPServer {
   }
 
   private _onExit: (() => Promise<void>) | null = null;
+  private _onBeforeExit: (() => void) | null = null;
+  private _onUncaught: ((err: Error) => void) | null = null;
 
   private registerCleanup(): void {
     this._onExit = async () => {
@@ -4454,6 +4511,23 @@ export class AlyBrowserMCPServer {
     };
     process.on('SIGINT', this._onExit);
     process.on('SIGTERM', this._onExit);
+
+    // Last-resort cleanup for unexpected exits (crash, uncaught exception)
+    this._onBeforeExit = () => {
+      for (const [, bridge] of this.sessions) {
+        bridge.close().catch(() => {});
+      }
+    };
+    process.on('beforeExit', this._onBeforeExit);
+
+    this._onUncaught = (err: Error) => {
+      console.error('[aly-browser] Uncaught exception, cleaning up:', err.message);
+      for (const [, bridge] of this.sessions) {
+        bridge.close().catch(() => {});
+      }
+      process.exit(1);
+    };
+    process.on('uncaughtException', this._onUncaught);
   }
 
   // ── WebSocket Monitor ─────────────────────────────────────
@@ -4538,7 +4612,12 @@ export class AlyBrowserMCPServer {
       return JSON.stringify(data);
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    let data: Record<string, unknown>;
+    try {
+      data = typeof result === 'string' ? JSON.parse(result) : (result as Record<string, unknown>);
+    } catch {
+      return errorResult('[WebSocket Monitor] Failed to parse monitor data');
+    }
 
     if (!data.installed) {
       return textResult('[WebSocket Monitor] Not installed. Call with action="start" first.');
@@ -4648,7 +4727,12 @@ export class AlyBrowserMCPServer {
       return JSON.stringify(data);
     })()`, tabId);
 
-    const data = typeof result === 'string' ? JSON.parse(result) : result;
+    let data: Record<string, unknown>;
+    try {
+      data = typeof result === 'string' ? JSON.parse(result) : (result as Record<string, unknown>);
+    } catch {
+      return errorResult('[Fetch Intercept] Failed to parse monitor data');
+    }
 
     if (!data.installed) {
       return textResult('[Fetch Intercept] Not installed. Call with action="start" first.');
@@ -4675,6 +4759,14 @@ export class AlyBrowserMCPServer {
       process.removeListener('SIGINT', this._onExit);
       process.removeListener('SIGTERM', this._onExit);
       this._onExit = null;
+    }
+    if (this._onBeforeExit) {
+      process.removeListener('beforeExit', this._onBeforeExit);
+      this._onBeforeExit = null;
+    }
+    if (this._onUncaught) {
+      process.removeListener('uncaughtException', this._onUncaught);
+      this._onUncaught = null;
     }
   }
 }
