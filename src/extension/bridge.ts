@@ -85,7 +85,7 @@ export class ExtensionBridge {
 
   async launch(options?: { url?: string }): Promise<void> {
     // Clean up stale session files from dead processes before starting
-    this.cleanupStaleSession();
+    await this.cleanupStaleSession();
 
     await this.startServer();
 
@@ -856,8 +856,50 @@ export class ExtensionBridge {
     }
   }
 
+  /** Extract Chrome PID from profile's SingletonLock symlink (format: "hostname-PID") */
+  private static getChromePidFromLock(profileDir: string): number | null {
+    try {
+      const lockFile = path.join(profileDir, 'SingletonLock');
+      const target = fs.readlinkSync(lockFile);
+      const match = target.match(/-(\d+)$/);
+      return match ? parseInt(match[1], 10) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Send SIGTERM to a Chrome process (try process group first, then individual) */
+  private static killChrome(pid: number): void {
+    try { process.kill(-pid, 'SIGTERM'); } catch {
+      try { process.kill(pid, 'SIGTERM'); } catch {}
+    }
+  }
+
+  /** Wait for a process to exit, SIGKILL if it doesn't within timeout */
+  private static async waitForExit(pid: number, timeoutMs = 3000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline && ExtensionBridge.isProcessAlive(pid)) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+    if (ExtensionBridge.isProcessAlive(pid)) {
+      try { process.kill(-pid, 'SIGKILL'); } catch {
+        try { process.kill(pid, 'SIGKILL'); } catch {}
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+
+  /** Remove stale session metadata files (keeps profile for persistence) */
+  private removeStaleSessionFiles(): void {
+    try { fs.unlinkSync(path.join(this._sessionDir, 'port')); } catch {}
+    try { fs.unlinkSync(path.join(this._sessionDir, 'pid')); } catch {}
+    try { fs.unlinkSync(path.join(this._sessionDir, 'token')); } catch {}
+    try { fs.unlinkSync(path.join(this._sessionDir, 'chrome-pid')); } catch {}
+    try { fs.rmSync(this._extensionCopyDir, { recursive: true, force: true }); } catch {}
+  }
+
   /** Clean up stale files from a previous session that crashed or was killed */
-  private cleanupStaleSession(): void {
+  private async cleanupStaleSession(): Promise<void> {
     const pidFile = path.join(this._sessionDir, 'pid');
     const chromePidFile = path.join(this._sessionDir, 'chrome-pid');
 
@@ -871,20 +913,27 @@ export class ExtensionBridge {
           const chromePid = parseInt(fs.readFileSync(chromePidFile, 'utf-8').trim(), 10);
           if (chromePid && ExtensionBridge.isProcessAlive(chromePid)) {
             log.debug(`Killing orphaned Chrome process ${chromePid}`);
-            try { process.kill(-chromePid, 'SIGTERM'); } catch {
-              try { process.kill(chromePid, 'SIGTERM'); } catch {}
-            }
+            ExtensionBridge.killChrome(chromePid);
+            await ExtensionBridge.waitForExit(chromePid);
           }
         } catch {}
-        // Remove stale files so port is freed
-        try { fs.unlinkSync(path.join(this._sessionDir, 'port')); } catch {}
-        try { fs.unlinkSync(pidFile); } catch {}
-        try { fs.unlinkSync(path.join(this._sessionDir, 'token')); } catch {}
-        try { fs.unlinkSync(chromePidFile); } catch {}
-        try { fs.rmSync(this._extensionCopyDir, { recursive: true, force: true }); } catch {}
+        this.removeStaleSessionFiles();
+        return;
       }
+      // Previous MCP server is still alive — don't touch its Chrome
+      if (oldPid && oldPid !== process.pid && ExtensionBridge.isProcessAlive(oldPid)) return;
     } catch {
-      // No PID file = no stale session
+      // No PID file — fall through to lock-based detection
+    }
+
+    // Fallback: detect orphaned Chrome via profile SingletonLock
+    // Handles the case where MCP server exited without leaving pid/chrome-pid files
+    const chromePid = ExtensionBridge.getChromePidFromLock(this._profileDir);
+    if (chromePid && ExtensionBridge.isProcessAlive(chromePid)) {
+      log.debug(`Killing orphaned Chrome (PID ${chromePid}) detected via profile lock`);
+      ExtensionBridge.killChrome(chromePid);
+      await ExtensionBridge.waitForExit(chromePid);
+      this.removeStaleSessionFiles();
     }
   }
 
@@ -897,29 +946,44 @@ export class ExtensionBridge {
         if (!fs.statSync(sessionDir).isDirectory()) continue;
         const pidFile = path.join(sessionDir, 'pid');
         const chromePidFile = path.join(sessionDir, 'chrome-pid');
+        const profileDir = path.join(sessionDir, 'profile');
 
-        try {
-          const oldPid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
-          if (!oldPid || ExtensionBridge.isProcessAlive(oldPid)) continue;
-
-          log.debug(`Stale session cleanup: "${dir}" (dead PID ${oldPid})`);
-          // Kill orphaned Chrome
-          try {
-            const chromePid = parseInt(fs.readFileSync(chromePidFile, 'utf-8').trim(), 10);
-            if (chromePid && ExtensionBridge.isProcessAlive(chromePid)) {
-              try { process.kill(-chromePid, 'SIGTERM'); } catch {
-                try { process.kill(chromePid, 'SIGTERM'); } catch {}
-              }
-            }
-          } catch {}
-          // Clean stale files
+        const cleanFiles = () => {
           try { fs.unlinkSync(path.join(sessionDir, 'port')); } catch {}
           try { fs.unlinkSync(pidFile); } catch {}
           try { fs.unlinkSync(path.join(sessionDir, 'token')); } catch {}
           try { fs.unlinkSync(chromePidFile); } catch {}
           try { fs.rmSync(path.join(sessionDir, 'extension'), { recursive: true, force: true }); } catch {}
+        };
+
+        let mcpAlive = false;
+        try {
+          const oldPid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+          if (!oldPid) throw new Error('invalid');
+          if (ExtensionBridge.isProcessAlive(oldPid)) { mcpAlive = true; }
+          else {
+            log.debug(`Stale session cleanup: "${dir}" (dead PID ${oldPid})`);
+            // Kill orphaned Chrome from chrome-pid file
+            try {
+              const chromePid = parseInt(fs.readFileSync(chromePidFile, 'utf-8').trim(), 10);
+              if (chromePid && ExtensionBridge.isProcessAlive(chromePid)) {
+                ExtensionBridge.killChrome(chromePid);
+              }
+            } catch {}
+            cleanFiles();
+          }
         } catch {
-          // No PID file = skip
+          // No PID file — fall through to lock-based detection
+        }
+
+        // Fallback: detect orphaned Chrome via profile SingletonLock
+        if (!mcpAlive) {
+          const chromePid = ExtensionBridge.getChromePidFromLock(profileDir);
+          if (chromePid && ExtensionBridge.isProcessAlive(chromePid)) {
+            log.debug(`Stale session cleanup: "${dir}" (orphaned Chrome PID ${chromePid} via profile lock)`);
+            ExtensionBridge.killChrome(chromePid);
+            cleanFiles();
+          }
         }
       }
     } catch {}

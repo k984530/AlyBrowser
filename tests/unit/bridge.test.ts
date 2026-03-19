@@ -86,6 +86,7 @@ vi.mock('fs', async () => {
     copyFileSync: vi.fn(),
     unlinkSync: vi.fn(),
     rmSync: vi.fn(),
+    readlinkSync: vi.fn(() => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }),
   };
 });
 
@@ -105,6 +106,7 @@ const mockedFs = {
   copyFileSync: vi.mocked(fs.copyFileSync),
   unlinkSync: vi.mocked(fs.unlinkSync),
   rmSync: vi.mocked(fs.rmSync),
+  readlinkSync: vi.mocked(fs.readlinkSync),
 };
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -1367,6 +1369,245 @@ describe('ExtensionBridge', () => {
 
       // _recoverAttempts should be reset — verify by checking it can recover again
       expect(bridge.isConnected).toBe(true);
+    });
+  });
+
+  // ── Orphaned Chrome cleanup via SingletonLock ────────────────
+
+  describe('orphaned Chrome cleanup via profile lock', () => {
+    let killSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      killSpy = vi.spyOn(process, 'kill').mockImplementation((() => true) as any);
+    });
+
+    afterEach(() => {
+      killSpy.mockRestore();
+    });
+
+    it('kills orphaned Chrome detected via SingletonLock when no pid file exists', async () => {
+      // No pid file → readFileSync throws for pid path
+      mockedFs.readFileSync.mockImplementation((p: any) => {
+        const filePath = String(p);
+        if (filePath.endsWith('/pid')) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        if (filePath.endsWith('manifest.json')) return '{"version": "1.0.0", "name": "AlyBrowser"}';
+        return "const WS_PORT = 19222;\nconst WS_TOKEN = '';";
+      });
+
+      // SingletonLock points to a live Chrome process
+      mockedFs.readlinkSync.mockReturnValue('myhost-55555');
+
+      // process.kill(pid, 0) for isProcessAlive — return true (alive)
+      killSpy.mockImplementation((pid: number, signal?: string | number) => {
+        if (signal === 0) return true; // alive check
+        return true; // SIGTERM succeeds
+      });
+
+      const bridge = new ExtensionBridge('lock-test');
+      const launchPromise = bridge.launch();
+
+      // Advance past the waitForExit polling (100ms intervals, process "dies" after kill)
+      // After first kill check, make process appear dead
+      let killCalled = false;
+      killSpy.mockImplementation((pid: number, signal?: string | number) => {
+        if (signal === 0) {
+          // After SIGTERM was sent, report as dead
+          return killCalled ? (() => { throw new Error('ESRCH'); })() : true;
+        }
+        killCalled = true;
+        return true;
+      });
+
+      await vi.advanceTimersByTimeAsync(1); // WSS listening
+      await vi.advanceTimersByTimeAsync(200); // waitForExit polling
+
+      // Verify SIGTERM was sent to the orphaned Chrome (negative PID = process group)
+      const termCalls = killSpy.mock.calls.filter(c => c[1] === 'SIGTERM');
+      expect(termCalls.length).toBeGreaterThan(0);
+      expect(Math.abs(termCalls[0][0] as number)).toBe(55555);
+
+      // Clean up — connect extension so launch completes
+      await vi.advanceTimersByTimeAsync(5001); // quick connect timeout
+      const wss = getLatestWss();
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+
+    it('skips kill when SingletonLock points to a dead process', async () => {
+      // No pid file
+      mockedFs.readFileSync.mockImplementation((p: any) => {
+        const filePath = String(p);
+        if (filePath.endsWith('/pid')) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        if (filePath.endsWith('manifest.json')) return '{"version": "1.0.0", "name": "AlyBrowser"}';
+        return "const WS_PORT = 19222;\nconst WS_TOKEN = '';";
+      });
+
+      // SingletonLock with dead PID
+      mockedFs.readlinkSync.mockReturnValue('myhost-99999');
+
+      // process.kill(pid, 0) throws → process is dead
+      killSpy.mockImplementation(() => { throw new Error('ESRCH'); });
+
+      const bridge = new ExtensionBridge('lock-dead');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+
+      // No SIGTERM should have been sent
+      const termCalls = killSpy.mock.calls.filter(c => c[1] === 'SIGTERM');
+      expect(termCalls.length).toBe(0);
+
+      // Connect and complete
+      await vi.advanceTimersByTimeAsync(5001);
+      const wss = getLatestWss();
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+
+    it('does not kill Chrome when MCP server pid is still alive', async () => {
+      // pid file exists with a live MCP server
+      mockedFs.readFileSync.mockImplementation((p: any) => {
+        const filePath = String(p);
+        if (filePath.endsWith('/pid')) return '11111';
+        if (filePath.endsWith('manifest.json')) return '{"version": "1.0.0", "name": "AlyBrowser"}';
+        return "const WS_PORT = 19222;\nconst WS_TOKEN = '';";
+      });
+
+      // pid 11111 is alive
+      killSpy.mockImplementation((pid: number, signal?: string | number) => {
+        if (signal === 0) return true;
+        return true;
+      });
+
+      const bridge = new ExtensionBridge('lock-alive-mcp');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+
+      // No SIGTERM should be sent — MCP server owns the Chrome
+      const termCalls = killSpy.mock.calls.filter(c => c[1] === 'SIGTERM');
+      expect(termCalls.length).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(5001);
+      const wss = getLatestWss();
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+
+    it('cleans stale session files after killing orphaned Chrome', async () => {
+      mockedFs.readFileSync.mockImplementation((p: any) => {
+        const filePath = String(p);
+        if (filePath.endsWith('/pid')) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        if (filePath.endsWith('manifest.json')) return '{"version": "1.0.0", "name": "AlyBrowser"}';
+        return "const WS_PORT = 19222;\nconst WS_TOKEN = '';";
+      });
+
+      mockedFs.readlinkSync.mockReturnValue('myhost-77777');
+
+      // First call: alive, after SIGTERM: dead
+      let killed = false;
+      killSpy.mockImplementation((pid: number, signal?: string | number) => {
+        if (signal === 0) {
+          if (killed) throw new Error('ESRCH');
+          return true;
+        }
+        killed = true;
+        return true;
+      });
+
+      const bridge = new ExtensionBridge('lock-cleanup');
+      const launchPromise = bridge.launch();
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.advanceTimersByTimeAsync(200);
+
+      // Session files should have been cleaned
+      const unlinkPaths = mockedFs.unlinkSync.mock.calls.map(c => String(c[0]));
+      expect(unlinkPaths.some(p => p.endsWith('/port'))).toBe(true);
+      expect(unlinkPaths.some(p => p.endsWith('/pid'))).toBe(true);
+      expect(unlinkPaths.some(p => p.endsWith('/token'))).toBe(true);
+      expect(unlinkPaths.some(p => p.endsWith('/chrome-pid'))).toBe(true);
+
+      // Complete launch
+      await vi.advanceTimersByTimeAsync(5001);
+      const wss = getLatestWss();
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+
+    it('SIGKILL if Chrome does not exit within timeout', async () => {
+      mockedFs.readFileSync.mockImplementation((p: any) => {
+        const filePath = String(p);
+        if (filePath.endsWith('/pid')) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        if (filePath.endsWith('manifest.json')) return '{"version": "1.0.0", "name": "AlyBrowser"}';
+        return "const WS_PORT = 19222;\nconst WS_TOKEN = '';";
+      });
+
+      mockedFs.readlinkSync.mockReturnValue('myhost-88888');
+
+      // Process stays alive — never dies after SIGTERM
+      killSpy.mockImplementation((pid: number, signal?: string | number) => {
+        if (signal === 0) return true; // always alive
+        return true;
+      });
+
+      const bridge = new ExtensionBridge('lock-sigkill');
+      const launchPromise = bridge.launch();
+
+      // Advance past waitForExit timeout (3000ms) + extra polling
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.advanceTimersByTimeAsync(3500);
+
+      // Should have sent SIGKILL after timeout
+      const sigkillCalls = killSpy.mock.calls.filter(c => c[1] === 'SIGKILL');
+      expect(sigkillCalls.length).toBeGreaterThan(0);
+
+      // Complete launch
+      await vi.advanceTimersByTimeAsync(5001);
+      const wss = getLatestWss();
+      simulateExtensionReady(wss);
+      await vi.advanceTimersByTimeAsync(1);
+      await launchPromise;
+    });
+  });
+
+  // ── cleanupAllStaleSessions with lock-based detection ─────────
+
+  describe('cleanupAllStaleSessions', () => {
+    let killSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      killSpy = vi.spyOn(process, 'kill').mockImplementation((() => true) as any);
+    });
+
+    afterEach(() => {
+      killSpy.mockRestore();
+    });
+
+    it('kills orphaned Chrome via lock when no pid file in session dir', () => {
+      mockedFs.existsSync.mockReturnValue(true);
+      mockedFs.readdirSync.mockReturnValue(['orphan-session'] as any);
+      mockedFs.statSync.mockReturnValue({ isFile: () => false, isDirectory: () => true } as any);
+
+      // No pid file
+      mockedFs.readFileSync.mockImplementation((p: any) => {
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      });
+
+      // SingletonLock → live Chrome
+      mockedFs.readlinkSync.mockReturnValue('host-44444');
+
+      killSpy.mockImplementation((pid: number, signal?: string | number) => {
+        if (signal === 0) return true;
+        return true;
+      });
+
+      ExtensionBridge.cleanupAllStaleSessions();
+
+      const termCalls = killSpy.mock.calls.filter(c => c[1] === 'SIGTERM');
+      expect(termCalls.length).toBeGreaterThan(0);
+      expect(Math.abs(termCalls[0][0] as number)).toBe(44444);
     });
   });
 });
