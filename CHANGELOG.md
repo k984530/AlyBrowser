@@ -1,5 +1,50 @@
 # Changelog
 
+## [3.0.2] - 2026-03-19
+
+### Fixed (Stability — 꺼짐 현상 해결)
+- **Process crash prevention**: Added `unhandledRejection` handler — async errors no longer silently kill the MCP server
+- **content.js TDZ crash**: Fixed 2 `ReferenceError` bugs where `MutationObserver` was used before declaration in `handleWaitForSelector`/`handleWaitForStable` (timeout → extension crash)
+- **Synchronous cleanup**: Added `killSync()` to `ExtensionBridge` for `beforeExit` — Chrome processes properly killed even when async cleanup is impossible
+- **Double signal guard**: `_cleaningUp` flag prevents duplicate SIGINT/SIGTERM cleanup runs
+- **WS race condition**: Replaced boolean `connecting` flag with monotonic `connectId` counter in `background.js` — eliminates stale callback execution on concurrent connections
+
+### Fixed (Broken Features — 안되는 기능 수정)
+- **Input validation**: Added `requireString()` to 17 handlers: navigate, eval, cookieGet, cookieDelete, alarmCreate, storageSet, notify, bookmarkCreate/Delete, clipboardWrite, download, learn (url/action/result/note), launch (url)
+- **Action enum validation**: 11 handlers now reject invalid action values: networkThrottle, shadowDomPierce, highlight, popupBlocker, dialogHandler, styleOverride, localStorage, domObserve, darkMode, websocketMonitor, fetchIntercept
+- **Session broadcast**: Validates action enum + per-action required params (url for navigate, ref for click, ref+text for type, expression for eval)
+- **Form fill**: Rejects arrays passed as data (only objects allowed)
+- **Form detect**: Uses `safeJsonParse` instead of raw `JSON.parse`
+- **content.js handleType**: Validates `params.text` is non-null, refreshes `tag` variable after element reassignment, wraps `focus()` in try-catch
+- **content.js handleSelect**: Validates element is actually a `<select>` before setting value
+- **content.js handleUpload**: Wraps `el.files` assignment in try-catch with descriptive error
+- **content.js handleCommand**: Guards `cmd.params` with `|| {}` to prevent TypeError on malformed messages
+- **background.js clipboard**: Added try-catch + tab validation to `handleClipboardRead`/`handleClipboardWrite`
+
+### Improved (아쉬운 기능 개선)
+- **handleDoubleClick**: Reports when second click misses (previously silent)
+- **handleSessionClone**: Returns `isError: true` when 0 cookies copied (previously returned success)
+- **handleCookieExport**: Adds security warning about sensitive authentication data
+- **handleConsoleLog**: Clearer empty-result message ("call again after page activity")
+- **handleSelectorGenerator**: Descriptive error with param usage hints
+- **Validation-first order**: 4 handlers (darkMode, viewportTest, websocketMonitor, fetchIntercept) now validate action/preset BEFORE `ensureConnected` — invalid inputs get clear error even without a session
+- **handleViewportTest**: Rejects invalid presets with available options list
+- **handleHover**: Consistent error message with guidance (previously terse)
+- **Watch context**: `handleWatchCheck` reuses stored tabId/frameId from `watch_start` — prevents checking wrong tab/frame
+- **Screenshot diff**: Validates file paths before calling `compareScreenshots()`
+
+### Added (iframe 지원 확장)
+- **`bridge.evaluate()` frameId**: Third parameter enables iframe-targeted JavaScript evaluation
+- **70+ handlers**: All eval-based handlers now extract and pass `frameId`
+- **65 tool schemas**: Added `frameIdProp` to 65 MCP tool definitions — AI agents can now target specific iframes
+- **`background.js` routing**: `handleEvaluate` uses `chrome.scripting.executeScript({ target: { frameIds } })` to execute in correct iframe
+- **81/133 tools** now support iframe targeting via `frameId` parameter
+- **`PageWatcher`**: `WatchTarget` interface stores `tabId`/`frameId` for context preservation
+
+### Tests
+- 27 new tests (623 → 650): site knowledge, batch snapshot, session broadcast, watch lifecycle, screenshot diff, action enum validation
+- Coverage: 71% lines, 55% branch
+
 ## [3.0.1] - 2026-03-18
 
 ### Added

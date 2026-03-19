@@ -2599,7 +2599,7 @@ export class AlyBrowserMCPServer {
           try {
             const parts = pattern.match(/^\\/(.+)\\/([gimsuy]*)$/);
             if (parts) matched = new RegExp(parts[1], parts[2]).test(url);
-          } catch {}
+          } catch (e) { resolve(JSON.stringify({ error: 'Invalid regex: ' + e.message })); return; }
         } else {
           matched = url.includes(pattern);
         }
@@ -2644,7 +2644,9 @@ export class AlyBrowserMCPServer {
             text: (el.textContent || '').trim().slice(0, 40),
             id: el.id || null,
           });
-        } catch {}
+        } catch (e) {
+          clicked.push({ tag: el.tagName?.toLowerCase() || '?', text: '[click failed: ' + e.message + ']', id: el.id || null });
+        }
       }
       return JSON.stringify({ total: document.querySelectorAll(${JSON.stringify(selector)}).length, clicked: clicked.length, elements: clicked });
     })()`, tabId);
