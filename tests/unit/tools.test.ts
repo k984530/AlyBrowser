@@ -11,8 +11,8 @@ describe('tools definitions', () => {
     expect(tools.length).toBeGreaterThan(0);
   });
 
-  it('has exactly 126 tools', () => {
-    expect(tools.length).toBe(126);
+  it('has exactly 133 tools', () => {
+    expect(tools.length).toBe(133);
   });
 
   it('every tool has required fields', () => {
@@ -137,6 +137,12 @@ describe('tools definitions', () => {
     'browser_websocket_monitor',
     // Fetch Intercept (1)
     'browser_fetch_intercept',
+    // Multi-Session Batch (2)
+    'browser_batch_snapshot', 'browser_session_broadcast',
+    // Page Watch (4)
+    'browser_watch_start', 'browser_watch_check', 'browser_watch_list', 'browser_watch_stop',
+    // Screenshot Diff (1)
+    'browser_screenshot_diff',
   ];
 
   it('includes all expected tools', () => {

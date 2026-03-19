@@ -73,7 +73,7 @@ await sessionB.launch({ url: 'https://instagram.com' });
 // Each has independent login state
 ```
 
-## MCP Tools (126)
+## MCP Tools (133)
 
 ### Browser Control (5)
 

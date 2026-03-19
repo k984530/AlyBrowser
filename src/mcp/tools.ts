@@ -1818,4 +1818,96 @@ export const tools: ToolDefinition[] = [
       },
     },
   },
+
+  // ── Multi-Session Batch Operations ──────────────────────
+  {
+    name: 'browser_batch_snapshot',
+    description:
+      'Take snapshots from multiple sessions simultaneously (parallel). ' +
+      'Useful for comparing the same page across different accounts or monitoring multiple sites at once.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionIds: { type: 'array', items: { type: 'string' }, description: 'List of session IDs to snapshot' },
+        ...tabIdProp,
+        ...frameIdProp,
+      },
+      required: ['sessionIds'],
+    },
+  },
+  {
+    name: 'browser_session_broadcast',
+    description:
+      'Send the same command to multiple sessions simultaneously. Supports navigate, click, type, eval, scroll, snapshot. ' +
+      'Returns results from all sessions. Useful for identical tests across multiple accounts/profiles.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionIds: { type: 'array', items: { type: 'string' }, description: 'Target session IDs' },
+        action: { type: 'string', enum: ['navigate', 'click', 'type', 'eval', 'scroll', 'snapshot'], description: 'Action to broadcast' },
+        params: { type: 'object', description: 'Action parameters (e.g., { url: "..." } for navigate, { ref: "@e0" } for click)' },
+      },
+      required: ['sessionIds', 'action'],
+    },
+  },
+
+  // ── Page Watch (monitoring) ────────────────────────────
+  {
+    name: 'browser_watch_start',
+    description:
+      'Start monitoring a page for changes. Takes an initial snapshot as baseline. ' +
+      'Use browser_watch_check periodically to detect DOM changes via snapshot diff.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'URL label for the watch' },
+        ...tabIdProp, ...frameIdProp, ...sessionIdProp,
+      },
+    },
+  },
+  {
+    name: 'browser_watch_check',
+    description:
+      'Check a watched page for changes. Returns diff summary if changed, or "no changes" if unchanged.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        watchId: { type: 'string', description: 'Watch ID from browser_watch_start' },
+        ...tabIdProp, ...frameIdProp, ...sessionIdProp,
+      },
+      required: ['watchId'],
+    },
+  },
+  {
+    name: 'browser_watch_list',
+    description: 'List all active page watches with URL, session, change count, and last check time.',
+    inputSchema: { type: 'object', properties: { ...sessionIdProp } },
+  },
+  {
+    name: 'browser_watch_stop',
+    description: 'Stop monitoring a page and remove the watch.',
+    inputSchema: {
+      type: 'object',
+      properties: { watchId: { type: 'string', description: 'Watch ID to remove' } },
+      required: ['watchId'],
+    },
+  },
+
+  // ── Screenshot Diff ────────────────────────────────────
+  {
+    name: 'browser_screenshot_diff',
+    description:
+      'Compare screenshots between two sessions pixel-by-pixel. Returns similarity percentage (0-100) ' +
+      'and byte-level difference. Captures screenshots from both sessions and compares. ' +
+      'Useful for visual regression testing across accounts or A/B testing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionA: { type: 'string', description: 'First session ID' },
+        sessionB: { type: 'string', description: 'Second session ID' },
+        ...tabIdProp,
+      },
+      required: ['sessionA', 'sessionB'],
+    },
+  },
 ];

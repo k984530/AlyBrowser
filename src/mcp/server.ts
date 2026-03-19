@@ -7,8 +7,10 @@ import * as fs from 'fs';
 import { ExtensionBridge } from '../extension/bridge';
 import { tools } from './tools';
 import { SiteKnowledge } from './site-knowledge';
+import { PageWatcher } from './page-watch';
 import * as screen from './screen';
 import { snapshotDiff } from '../utils/snapshot-diff';
+import { compareScreenshots } from '../utils/screenshot-compare';
 
 const INSTRUCTIONS = `\
 AlyBrowser is a lightweight browser SDK for AI agents. \
@@ -98,8 +100,9 @@ export class AlyBrowserMCPServer {
   private sessions = new Map<string, ExtensionBridge>();
   private launching = new Set<string>();
   private siteKnowledge = new SiteKnowledge();
+  private pageWatcher = new PageWatcher();
   private recentFailures = new Map<string, Set<string>>();
-  private knowledgeShownPaths = new Set<string>();
+  private knowledgeShownPerSession = new Map<string, Set<string>>(); // sessionId → shown paths
   private lastUrlPerTab = new Map<string, string>(); // "sessionId:tabId" → url
   private lastSnapshot = new Map<string, string>(); // "sessionId:tabId:frameId" → snapshot
   readonly server: Server;
@@ -143,6 +146,16 @@ export class AlyBrowserMCPServer {
     const val = args[key];
     if (typeof val !== 'string' || !val) throw new Error(`"${key}" must be a non-empty string`);
     return val;
+  }
+
+  /** Get or create session-specific knowledge shown set */
+  private getShownPaths(sessionId: string): Set<string> {
+    let set = this.knowledgeShownPerSession.get(sessionId);
+    if (!set) {
+      set = new Set();
+      this.knowledgeShownPerSession.set(sessionId, set);
+    }
+    return set;
   }
 
   private ensureConnected(args: Record<string, unknown>): ExtensionBridge {
@@ -611,6 +624,26 @@ export class AlyBrowserMCPServer {
       case 'browser_fetch_intercept':
         return this.handleFetchIntercept(args);
 
+      // Multi-Session Batch
+      case 'browser_batch_snapshot':
+        return this.handleBatchSnapshot(args);
+      case 'browser_session_broadcast':
+        return this.handleSessionBroadcast(args);
+
+      // Page Watch
+      case 'browser_watch_start':
+        return this.handleWatchStart(args);
+      case 'browser_watch_check':
+        return this.handleWatchCheck(args);
+      case 'browser_watch_list':
+        return this.handleWatchList();
+      case 'browser_watch_stop':
+        return this.handleWatchStop(args);
+
+      // Screenshot Diff
+      case 'browser_screenshot_diff':
+        return this.handleScreenshotDiff(args);
+
       default:
         return errorResult(`Unknown tool: ${name}`);
     }
@@ -658,7 +691,7 @@ export class AlyBrowserMCPServer {
       const kKey = this.knowledgeKey(url);
       const knowledge = this.siteKnowledge.formatForContext(url);
       const prefix = knowledge ? `${knowledge}\n\n` : '';
-      this.knowledgeShownPaths.add(kKey);
+      this.getShownPaths(sessionId).add(kKey);
       this.lastUrlPerTab.set(this.tabKey(sessionId, 0), url);
       // Wait for page to stabilize after initial navigation
       await bridge.waitForStable({ timeout: 5000, stableMs: 500 }).catch(() => {});
@@ -678,10 +711,10 @@ export class AlyBrowserMCPServer {
     const kKey = this.knowledgeKey(url);
 
     let prefix = '';
-    if (!this.knowledgeShownPaths.has(kKey)) {
+    if (!this.getShownPaths(sessionId).has(kKey)) {
       const knowledge = this.siteKnowledge.formatForContext(url);
       if (knowledge) prefix = `${knowledge}\n\n`;
-      this.knowledgeShownPaths.add(kKey);
+      this.getShownPaths(sessionId).add(kKey);
     }
     this.lastUrlPerTab.set(this.tabKey(sessionId, tabId), url);
 
@@ -739,10 +772,10 @@ export class AlyBrowserMCPServer {
       if (lastUrl !== url) {
         this.lastUrlPerTab.set(tk, url);
         const kKey = this.knowledgeKey(url);
-        if (!this.knowledgeShownPaths.has(kKey) && this.siteKnowledge.hasPath(url)) {
+        if (!this.getShownPaths(sessionId).has(kKey) && this.siteKnowledge.hasPath(url)) {
           const hint = this.siteKnowledge.formatCompact(url);
           if (hint) {
-            this.knowledgeShownPaths.add(kKey);
+            this.getShownPaths(sessionId).add(kKey);
             return textResult(`${hint}\n\n${snap}`);
           }
         }
@@ -3103,14 +3136,11 @@ export class AlyBrowserMCPServer {
       if (typeof url === 'string') {
         const allCookies = await source.cookieGet(url);
         if (Array.isArray(allCookies)) {
-          for (const cookie of allCookies) {
-            try {
-              await target.cookieSet(cookie as Record<string, unknown>);
-              copiedCount++;
-            } catch (err) {
-              failedCount++;
-            }
-          }
+          const results = await Promise.allSettled(
+            allCookies.map(cookie => target.cookieSet(cookie as Record<string, unknown>)),
+          );
+          copiedCount = results.filter(r => r.status === 'fulfilled').length;
+          failedCount = results.filter(r => r.status === 'rejected').length;
         }
       }
     } catch (err) {
@@ -4368,7 +4398,7 @@ export class AlyBrowserMCPServer {
       }
     }
     this.lastUrlPerTab.clear();
-    this.knowledgeShownPaths.clear();
+    this.knowledgeShownPerSession.clear();
     return textResult(`Closed ${ids.length} session(s): ${ids.join(', ') || 'none'}`);
   }
 
@@ -4748,6 +4778,195 @@ export class AlyBrowserMCPServer {
       lines.push(`  ${req.method} ${req.url} → ${statusIcon} (${req.duration}ms)`);
       if (req.reqBody) lines.push(`    req: ${req.reqBody}`);
       if (req.resBody) lines.push(`    res: ${req.resBody}`);
+    }
+
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Multi-Session Batch Operations ───────────────────────
+
+  private async handleBatchSnapshot(args: Record<string, unknown>): Promise<ToolResult> {
+    const sessionIds = args.sessionIds as string[];
+    if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+      return errorResult('"sessionIds" must be a non-empty array');
+    }
+    const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
+
+    const results = await Promise.allSettled(
+      sessionIds.map(async (sid) => {
+        const bridge = this.sessions.get(sid);
+        if (!bridge?.isConnected) throw new Error(`Session "${sid}" not connected`);
+        const snap = await bridge.snapshot(tabId, frameId);
+        return { sessionId: sid, snapshot: snap };
+      }),
+    );
+
+    const lines: string[] = [`[Batch Snapshot] ${sessionIds.length} session(s)`];
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        const { sessionId: sid, snapshot } = r.value;
+        lines.push(`\n── ${sid} ──`);
+        lines.push(snapshot);
+      } else {
+        lines.push(`\n── ERROR ── ${r.reason?.message || 'Unknown error'}`);
+      }
+    }
+    return textResult(lines.join('\n'));
+  }
+
+  private async handleSessionBroadcast(args: Record<string, unknown>): Promise<ToolResult> {
+    const sessionIds = args.sessionIds as string[];
+    const action = args.action as string;
+    const params = (args.params as Record<string, unknown>) || {};
+    if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+      return errorResult('"sessionIds" must be a non-empty array');
+    }
+
+    const results = await Promise.allSettled(
+      sessionIds.map(async (sid) => {
+        const bridge = this.sessions.get(sid);
+        if (!bridge?.isConnected) throw new Error(`Session "${sid}" not connected`);
+        const tabId = params.tabId as number | undefined;
+        const frameId = params.frameId as number | undefined;
+
+        switch (action) {
+          case 'navigate':
+            await bridge.navigate(params.url as string, tabId);
+            return `Navigated to ${params.url}`;
+          case 'click':
+            await bridge.click(params.ref as string, tabId, frameId);
+            return `Clicked ${params.ref}`;
+          case 'type':
+            await bridge.type(params.ref as string, params.text as string, { clear: params.clear as boolean, tabId, frameId });
+            return `Typed "${(params.text as string)?.slice(0, 30)}"`;
+          case 'eval':
+            const evalResult = await bridge.evaluate(params.expression as string, tabId);
+            return typeof evalResult === 'string' ? evalResult : JSON.stringify(evalResult);
+          case 'scroll':
+            await bridge.scrollBy({ x: (params.x as number) ?? 0, y: (params.y as number) ?? 0, tabId, frameId });
+            return `Scrolled`;
+          case 'snapshot':
+            return await bridge.snapshot(tabId, frameId);
+          default:
+            throw new Error(`Unsupported broadcast action: ${action}`);
+        }
+      }),
+    );
+
+    const lines: string[] = [`[Broadcast: ${action}] ${sessionIds.length} session(s)`];
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      const sid = sessionIds[i];
+      if (r.status === 'fulfilled') {
+        lines.push(`  ${sid}: ${String(r.value).slice(0, 200)}`);
+      } else {
+        lines.push(`  ${sid}: ERROR — ${r.reason?.message || 'Unknown'}`);
+      }
+    }
+    return textResult(lines.join('\n'));
+  }
+
+  // ── Page Watch ────────────────────────────────────────────
+
+  private async handleWatchStart(args: Record<string, unknown>): Promise<ToolResult> {
+    const sessionId = this.getSessionId(args);
+    const bridge = this.ensureConnected(args);
+    const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
+    const url = (args.url as string) || await this.getCurrentUrl(sessionId, tabId) || 'unknown';
+
+    const snapshot = await bridge.snapshot(tabId, frameId);
+    const watch = this.pageWatcher.addWatch(url, sessionId, snapshot);
+
+    return textResult(
+      `[Watch Started] ${watch.id}\n  URL: ${url}\n  Session: ${sessionId}\n  Initial snapshot captured (${snapshot.split('\n').length} lines)`,
+    );
+  }
+
+  private async handleWatchCheck(args: Record<string, unknown>): Promise<ToolResult> {
+    const watchId = this.requireString(args, 'watchId');
+    const watch = this.pageWatcher.getWatch(watchId);
+    if (!watch) return errorResult(`Watch "${watchId}" not found`);
+
+    const bridge = this.sessions.get(watch.sessionId);
+    if (!bridge?.isConnected) return errorResult(`Session "${watch.sessionId}" not connected`);
+
+    const tabId = args.tabId as number | undefined;
+    const frameId = args.frameId as number | undefined;
+    const newSnapshot = await bridge.snapshot(tabId, frameId);
+    const change = this.pageWatcher.checkWatch(watchId, newSnapshot);
+
+    if (!change) {
+      return textResult(`[Watch ${watchId}] No changes detected (${watch.changeCount} total changes so far)`);
+    }
+
+    return textResult(
+      `[Watch ${watchId}] Change #${watch.changeCount} detected!\n\n${change.diff.summary}`,
+    );
+  }
+
+  private async handleWatchList(): Promise<ToolResult> {
+    const watches = this.pageWatcher.listWatches();
+    if (watches.length === 0) return textResult('[Watch] No active watches.');
+
+    const lines = [`[Watch] ${watches.length} active watch(es)`];
+    for (const w of watches) {
+      const ago = Math.round((Date.now() - w.lastCheckedAt) / 1000);
+      lines.push(`  ${w.id}: ${w.url} (session: ${w.sessionId}, changes: ${w.changeCount}, last check: ${ago}s ago)`);
+    }
+    return textResult(lines.join('\n'));
+  }
+
+  private async handleWatchStop(args: Record<string, unknown>): Promise<ToolResult> {
+    const watchId = this.requireString(args, 'watchId');
+    const removed = this.pageWatcher.removeWatch(watchId);
+    return removed
+      ? textResult(`[Watch] ${watchId} stopped and removed.`)
+      : errorResult(`Watch "${watchId}" not found`);
+  }
+
+  // ── Screenshot Diff ───────────────────────────────────────
+
+  private async handleScreenshotDiff(args: Record<string, unknown>): Promise<ToolResult> {
+    const sessionA = this.requireString(args, 'sessionA');
+    const sessionB = this.requireString(args, 'sessionB');
+
+    const bridgeA = this.sessions.get(sessionA);
+    const bridgeB = this.sessions.get(sessionB);
+    if (!bridgeA?.isConnected) return errorResult(`Session "${sessionA}" not connected`);
+    if (!bridgeB?.isConnected) return errorResult(`Session "${sessionB}" not connected`);
+
+    // Capture screenshots in parallel
+    const [fileA, fileB] = await Promise.all([
+      (async () => {
+        try {
+          return screen.captureScreen({ windowTitle: `session:${sessionA}` });
+        } catch {
+          // Fallback: capture full screen
+          return screen.captureScreen({});
+        }
+      })(),
+      (async () => {
+        try {
+          return screen.captureScreen({ windowTitle: `session:${sessionB}` });
+        } catch {
+          return screen.captureScreen({});
+        }
+      })(),
+    ]);
+
+    const result = compareScreenshots(fileA, fileB);
+    const lines = [
+      `[Screenshot Diff] ${sessionA} vs ${sessionB}`,
+      `  Similarity: ${result.similarity.toFixed(1)}%`,
+      `  Hash match: ${result.identical ? 'Yes (identical)' : 'No'}`,
+      `  File A: ${fileA}`,
+      `  File B: ${fileB}`,
+    ];
+
+    if (result.similarity < 95) {
+      lines.push(`  ⚠ Visual difference detected (${(100 - result.similarity).toFixed(1)}% different)`);
     }
 
     return textResult(lines.join('\n'));
