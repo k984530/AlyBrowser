@@ -706,7 +706,7 @@ export class AlyBrowserMCPServer {
   private async handleNavigate(args: Record<string, unknown>): Promise<ToolResult> {
     const sessionId = this.getSessionId(args);
     const bridge = this.ensureConnected(args);
-    const url = args.url as string;
+    const url = this.requireString(args, 'url');
     const tabId = args.tabId as number | undefined;
     const kKey = this.knowledgeKey(url);
 
@@ -819,7 +819,7 @@ export class AlyBrowserMCPServer {
 
   private async handleEval(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
-    const expr = args.expression as string;
+    const expr = this.requireString(args, 'expression');
     const tabId = args.tabId as number | undefined;
     const result = await bridge.evaluate(expr, tabId);
     return textResult(
@@ -987,7 +987,9 @@ export class AlyBrowserMCPServer {
 
   private async handleCookieDelete(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
-    await bridge.cookieDelete(args.url as string, args.name as string);
+    const url = this.requireString(args, 'url');
+    const name = this.requireString(args, 'name');
+    await bridge.cookieDelete(url, name);
     return textResult('Cookie deleted.');
   }
 
@@ -995,10 +997,8 @@ export class AlyBrowserMCPServer {
 
   private async handleDownload(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
-    const result = await bridge.download(
-      args.url as string,
-      args.filename as string | undefined,
-    );
+    const url = this.requireString(args, 'url');
+    const result = await bridge.download(url, args.filename as string | undefined);
     return jsonResult(result);
   }
 
@@ -1017,7 +1017,8 @@ export class AlyBrowserMCPServer {
 
   private async handleAlarmCreate(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
-    const result = await bridge.alarmCreate(args.name as string, {
+    const name = this.requireString(args, 'name');
+    const result = await bridge.alarmCreate(name, {
       delayInMinutes: args.delayInMinutes,
       periodInMinutes: args.periodInMinutes,
     });
@@ -1050,7 +1051,11 @@ export class AlyBrowserMCPServer {
 
   private async handleStorageSet(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
-    await bridge.storageSet(args.data as Record<string, unknown>);
+    const data = args.data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return errorResult('"data" must be an object (key-value pairs)');
+    }
+    await bridge.storageSet(data as Record<string, unknown>);
     return textResult('Storage updated.');
   }
 
@@ -1058,10 +1063,9 @@ export class AlyBrowserMCPServer {
 
   private async handleNotify(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
-    const result = await bridge.notify(
-      args.title as string,
-      args.message as string,
-    );
+    const title = this.requireString(args, 'title');
+    const message = this.requireString(args, 'message');
+    const result = await bridge.notify(title, message);
     return jsonResult(result);
   }
 
@@ -1075,17 +1079,16 @@ export class AlyBrowserMCPServer {
 
   private async handleBookmarkCreate(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
-    const result = await bridge.bookmarkCreate(
-      args.title as string,
-      args.url as string,
-      args.parentId as string | undefined,
-    );
+    const title = this.requireString(args, 'title');
+    const url = this.requireString(args, 'url');
+    const result = await bridge.bookmarkCreate(title, url, args.parentId as string | undefined);
     return jsonResult(result);
   }
 
   private async handleBookmarkDelete(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
-    await bridge.bookmarkDelete(args.id as string);
+    const id = this.requireString(args, 'id');
+    await bridge.bookmarkDelete(id);
     return textResult('Bookmark deleted.');
   }
 
@@ -1107,8 +1110,9 @@ export class AlyBrowserMCPServer {
 
   private async handleClipboardWrite(args: Record<string, unknown>): Promise<ToolResult> {
     const bridge = this.ensureConnected(args);
+    const text = this.requireString(args, 'text');
     const tabId = args.tabId as number | undefined;
-    await bridge.clipboardWrite(args.text as string, tabId);
+    await bridge.clipboardWrite(text, tabId);
     return textResult('Clipboard updated.');
   }
 
@@ -2283,13 +2287,17 @@ export class AlyBrowserMCPServer {
     const tabId = args.tabId as number | undefined;
     const frameId = args.frameId as number | undefined;
     await bridge.send('click', { ref, tabId, frameId });
+    let secondClickFailed = false;
     try {
       await bridge.send('click', { ref, tabId, frameId });
     } catch {
-      // Element may have been removed/re-rendered after first click — acceptable for dblclick
+      secondClickFailed = true;
     }
     const snap = await bridge.snapshot(tabId, frameId);
-    return textResult(`Double-clicked ${ref}\n\n${snap}`);
+    const prefix = secondClickFailed
+      ? `Double-clicked ${ref} (second click missed — element may have re-rendered)`
+      : `Double-clicked ${ref}`;
+    return textResult(`${prefix}\n\n${snap}`);
   }
 
   private async handleRightClick(args: Record<string, unknown>): Promise<ToolResult> {
@@ -3151,16 +3159,19 @@ export class AlyBrowserMCPServer {
       warnings.push(`${failedCount} cookie(s) failed to copy`);
     }
 
+    const cookieFailed = copiedCount === 0 && (warnings.length > 0 || failedCount > 0);
     const lines = [
       `[Session Clone] "${sourceId}" → "${targetId}"`,
-      `  Cookies copied: ${copiedCount}`,
+      `  Cookies copied: ${copiedCount}${cookieFailed ? ' ⚠ authentication may not be preserved' : ''}`,
       `  Target port: ${target.port}`,
       args.url ? `  Navigated to: ${args.url}` : '  Ready for navigation',
     ];
     if (warnings.length) {
       lines.push(`  Warnings: ${warnings.join('; ')}`);
     }
-    return textResult(lines.join('\n'));
+    return cookieFailed
+      ? { content: [{ type: 'text' as const, text: lines.join('\n') }], isError: true }
+      : textResult(lines.join('\n'));
   }
 
   // ── Page Weight ───────────────────────────────────────────
@@ -4031,7 +4042,7 @@ export class AlyBrowserMCPServer {
     const logs = safeJsonParse(result);
 
     if (!logs || logs.length === 0) {
-      return textResult(`[Console] No messages${level !== 'all' ? ` (level: ${level})` : ''}. Interceptor installed — future messages will be captured.`);
+      return textResult(`[Console] No messages captured${level !== 'all' ? ` (filter: ${level})` : ''}. Interceptor active — call again after page activity.`);
     }
 
     const lines = [`[Console] ${logs.length} messages`];
@@ -4133,14 +4144,14 @@ export class AlyBrowserMCPServer {
       );
     })()`, tabId);
 
-    const parsed = typeof fields === 'string' ? JSON.parse(fields) : fields;
+    const parsed = typeof fields === 'string' ? safeJsonParse(fields) : fields;
     return jsonResult(parsed);
   }
 
   private async handleFormFill(args: Record<string, unknown>): Promise<ToolResult> {
     const data = args.data as Record<string, string>;
-    if (!data || typeof data !== 'object') {
-      return errorResult('"data" must be an object with field values');
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return errorResult('"data" must be an object with field values (e.g. { "email": "user@example.com" })');
     }
 
     const bridge = this.ensureConnected(args);
@@ -4533,19 +4544,23 @@ export class AlyBrowserMCPServer {
   private _onExit: (() => Promise<void>) | null = null;
   private _onBeforeExit: (() => void) | null = null;
   private _onUncaught: ((err: Error) => void) | null = null;
+  private _onUnhandledRejection: ((reason: unknown) => void) | null = null;
+  private _cleaningUp = false;
 
   private registerCleanup(): void {
     this._onExit = async () => {
+      if (this._cleaningUp) return; // Guard against double signal
+      this._cleaningUp = true;
       await this.cleanupAll().catch(() => {});
       process.exit(0);
     };
     process.on('SIGINT', this._onExit);
     process.on('SIGTERM', this._onExit);
 
-    // Last-resort cleanup for unexpected exits (crash, uncaught exception)
+    // beforeExit: synchronously kill Chrome processes as last resort
     this._onBeforeExit = () => {
       for (const [, bridge] of this.sessions) {
-        bridge.close().catch(() => {});
+        bridge.killSync();
       }
     };
     process.on('beforeExit', this._onBeforeExit);
@@ -4553,11 +4568,18 @@ export class AlyBrowserMCPServer {
     this._onUncaught = (err: Error) => {
       console.error('[aly-browser] Uncaught exception, cleaning up:', err.message);
       for (const [, bridge] of this.sessions) {
-        bridge.close().catch(() => {});
+        bridge.killSync();
       }
       process.exit(1);
     };
     process.on('uncaughtException', this._onUncaught);
+
+    this._onUnhandledRejection = (reason: unknown) => {
+      const msg = reason instanceof Error ? reason.message : String(reason);
+      console.error('[aly-browser] Unhandled rejection:', msg);
+      // Do NOT exit — keep serving. The rejection is logged for debugging.
+    };
+    process.on('unhandledRejection', this._onUnhandledRejection);
   }
 
   // ── WebSocket Monitor ─────────────────────────────────────
@@ -4822,6 +4844,15 @@ export class AlyBrowserMCPServer {
     if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
       return errorResult('"sessionIds" must be a non-empty array');
     }
+    const validActions = ['navigate', 'click', 'type', 'eval', 'scroll', 'snapshot'];
+    if (!action || !validActions.includes(action)) {
+      return errorResult(`"action" must be one of: ${validActions.join(', ')}`);
+    }
+    // Validate action-specific required params
+    if (action === 'navigate' && !params.url) return errorResult('"params.url" is required for navigate action');
+    if (action === 'click' && !params.ref) return errorResult('"params.ref" is required for click action');
+    if (action === 'type' && (!params.ref || !params.text)) return errorResult('"params.ref" and "params.text" are required for type action');
+    if (action === 'eval' && !params.expression) return errorResult('"params.expression" is required for eval action');
 
     const results = await Promise.allSettled(
       sessionIds.map(async (sid) => {
@@ -4840,9 +4871,10 @@ export class AlyBrowserMCPServer {
           case 'type':
             await bridge.type(params.ref as string, params.text as string, { clear: params.clear as boolean, tabId, frameId });
             return `Typed "${(params.text as string)?.slice(0, 30)}"`;
-          case 'eval':
+          case 'eval': {
             const evalResult = await bridge.evaluate(params.expression as string, tabId);
             return typeof evalResult === 'string' ? evalResult : JSON.stringify(evalResult);
+          }
           case 'scroll':
             await bridge.scrollBy({ x: (params.x as number) ?? 0, y: (params.y as number) ?? 0, tabId, frameId });
             return `Scrolled`;
@@ -4987,5 +5019,10 @@ export class AlyBrowserMCPServer {
       process.removeListener('uncaughtException', this._onUncaught);
       this._onUncaught = null;
     }
+    if (this._onUnhandledRejection) {
+      process.removeListener('unhandledRejection', this._onUnhandledRejection);
+      this._onUnhandledRejection = null;
+    }
+    this._cleaningUp = false;
   }
 }

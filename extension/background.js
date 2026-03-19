@@ -11,11 +11,13 @@ const MAX_ALARM_EVENTS = 100;
 
 // ── WebSocket Connection ────────────────────────────────────
 
-let connecting = false;
+let connectId = 0; // Monotonic ID to detect stale connection callbacks
 
 function connect() {
-  if (connecting) return;
-  connecting = true;
+  if (ws && ws.readyState === WebSocket.OPEN) return;
+  if (ws && ws.readyState === WebSocket.CONNECTING) return;
+
+  const thisId = ++connectId;
 
   try {
     const wsUrl = WS_TOKEN
@@ -23,15 +25,16 @@ function connect() {
       : `ws://localhost:${WS_PORT}`;
     ws = new WebSocket(wsUrl);
   } catch {
-    connecting = false;
+    ws = null;
     scheduleReconnect();
     return;
   }
 
-  ws.onopen = async () => {
-    connecting = false;
+  const currentWs = ws;
+
+  currentWs.onopen = async () => {
+    if (thisId !== connectId) { currentWs.close(); return; } // Stale
     console.log('[aly] Connected to bridge');
-    // Cancel reconnect alarm and reset backoff since we're connected
     chrome.alarms.clear('aly-reconnect');
     reconnectDelay = RECONNECT_BASE_MIN;
     startPingTimer();
@@ -39,7 +42,6 @@ function connect() {
     if (tabs[0]) {
       activeTabId = tabs[0].id;
     } else {
-      // Try any existing tab before creating a new one
       const allTabs = await chrome.tabs.query({ currentWindow: true });
       if (allTabs[0]) {
         activeTabId = allTabs[0].id;
@@ -48,10 +50,13 @@ function connect() {
         activeTabId = tab.id;
       }
     }
-    ws.send(JSON.stringify({ type: 'ready', tabId: activeTabId }));
+    if (currentWs.readyState === WebSocket.OPEN) {
+      currentWs.send(JSON.stringify({ type: 'ready', tabId: activeTabId }));
+    }
   };
 
-  ws.onmessage = async (event) => {
+  currentWs.onmessage = async (event) => {
+    if (thisId !== connectId) return; // Stale
     let cmd;
     try {
       cmd = JSON.parse(event.data);
@@ -69,21 +74,25 @@ function connect() {
       response = JSON.stringify({ id: cmd.id, error: err.message || String(err) });
     }
     try {
-      ws.send(response);
+      if (currentWs.readyState === WebSocket.OPEN) {
+        currentWs.send(response);
+      }
     } catch {
-      // WS closed during async command — response is lost, onclose will handle reconnect
+      // WS closed during async command — onclose will handle reconnect
     }
   };
 
-  ws.onclose = () => {
-    connecting = false;
+  currentWs.onclose = () => {
     stopPingTimer();
-    console.log('[aly] Disconnected, scheduling reconnect...');
-    scheduleReconnect();
+    if (ws === currentWs) ws = null; // Only clear if still the active connection
+    if (thisId === connectId) {
+      console.log('[aly] Disconnected, scheduling reconnect...');
+      scheduleReconnect();
+    }
   };
 
-  ws.onerror = () => {
-    connecting = false;
+  currentWs.onerror = () => {
+    // onclose will fire after onerror — no extra cleanup needed
   };
 }
 
@@ -565,28 +574,38 @@ async function handleTopSites() {
 
 async function handleClipboardRead(tabId) {
   const target = tabId || activeTabId;
-  const results = await chrome.scripting.executeScript({
-    target: { tabId: target },
-    world: 'MAIN',
-    func: async () => {
-      try { return await navigator.clipboard.readText(); }
-      catch (e) { return { error: e.message }; }
-    },
-  });
-  const r = results?.[0]?.result;
-  if (r?.error) throw new Error(r.error);
-  return r;
+  if (!target) throw new Error('No active tab for clipboard read');
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: target },
+      world: 'MAIN',
+      func: async () => {
+        try { return await navigator.clipboard.readText(); }
+        catch (e) { return { error: e.message }; }
+      },
+    });
+    const r = results?.[0]?.result;
+    if (r?.error) throw new Error(r.error);
+    return r;
+  } catch (err) {
+    throw new Error(`Clipboard read failed: ${err.message}`);
+  }
 }
 
 async function handleClipboardWrite(params, tabId) {
   const target = tabId || activeTabId;
-  await chrome.scripting.executeScript({
-    target: { tabId: target },
-    world: 'MAIN',
-    func: async (text) => { await navigator.clipboard.writeText(text); },
-    args: [params.text],
-  });
-  return { ok: true };
+  if (!target) throw new Error('No active tab for clipboard write');
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: target },
+      world: 'MAIN',
+      func: async (text) => { await navigator.clipboard.writeText(text); },
+      args: [params.text],
+    });
+    return { ok: true };
+  } catch (err) {
+    throw new Error(`Clipboard write failed: ${err.message}`);
+  }
 }
 
 // ── Frames ──────────────────────────────────────────────────

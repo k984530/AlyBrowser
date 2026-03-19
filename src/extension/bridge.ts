@@ -821,6 +821,29 @@ export class ExtensionBridge {
     }
   }
 
+  /** Synchronous kill for use in beforeExit/uncaughtException where async is not safe */
+  killSync(): void {
+    this._intentionalClose = true;
+    if (this._recoveryTimer) {
+      clearTimeout(this._recoveryTimer);
+      this._recoveryTimer = null;
+    }
+    for (const [, d] of this.pending) {
+      d.reject(new Error('Bridge killed'));
+    }
+    this.pending.clear();
+    if (this.ws) {
+      try { this.ws.close(); } catch {}
+      this.ws = null;
+    }
+    if (this.chromeProcess && !this.chromeProcess.killed) {
+      try { process.kill(-this.chromeProcess.pid!, 'SIGKILL'); } catch {
+        try { this.chromeProcess.kill('SIGKILL'); } catch {}
+      }
+      this.chromeProcess = null;
+    }
+  }
+
   // ── Stale Session Cleanup ──────────────────────────────────
 
   /** Check if a PID is still running */

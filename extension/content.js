@@ -21,16 +21,17 @@ chrome.runtime.onMessage.addListener((cmd, sender, sendResponse) => {
 });
 
 async function handleCommand(cmd) {
+  const p = cmd.params || {};
   switch (cmd.action) {
     case 'snapshot': return buildSnapshot();
-    case 'click': return handleClick(cmd.params.ref);
-    case 'type': return handleType(cmd.params);
-    case 'select': return handleSelect(cmd.params);
-    case 'hover': return handleHover(cmd.params.ref);
-    case 'scrollBy': return handleScroll(cmd.params);
-    case 'waitForSelector': return handleWaitForSelector(cmd.params);
-    case 'waitForStable': return handleWaitForStable(cmd.params);
-    case 'upload': return handleUpload(cmd.params);
+    case 'click': return handleClick(p.ref);
+    case 'type': return handleType(p);
+    case 'select': return handleSelect(p);
+    case 'hover': return handleHover(p.ref);
+    case 'scrollBy': return handleScroll(p);
+    case 'waitForSelector': return handleWaitForSelector(p);
+    case 'waitForStable': return handleWaitForStable(p);
+    case 'upload': return handleUpload(p);
     case 'getHTML': return document.documentElement?.outerHTML || '';
     default: throw new Error(`Unknown content action: ${cmd.action}`);
   }
@@ -283,6 +284,7 @@ function handleClick(ref) {
 function handleType(params) {
   let el = refMap.get(params.ref);
   if (!el) throw new Error(`Element ${params.ref} not found — page may have changed. Call browser_snapshot to get fresh ref IDs.`);
+  if (params.text == null) throw new Error('"text" parameter is required for browser_type');
 
   // ── Special key sequences: {Enter}, {Tab}, {Escape}, {Backspace} ──
   const keyMatch = params.text.match(/^\{(\w+)\}$/);
@@ -298,16 +300,19 @@ function handleType(params) {
   }
 
   // If ref points to a wrapper, find the actual input/textarea inside
-  const tag = el.tagName?.toLowerCase();
+  let tag = el.tagName?.toLowerCase();
   if (tag !== 'input' && tag !== 'textarea') {
     const child = el.querySelector('input, textarea, [contenteditable="true"]');
-    if (child) el = child;
+    if (child) {
+      el = child;
+      tag = el.tagName?.toLowerCase();
+    }
   }
 
   // ── ContentEditable path (div[contenteditable], etc.) ──
   if (el.isContentEditable && tag !== 'input' && tag !== 'textarea') {
     el.scrollIntoView({ block: 'center', behavior: 'instant' });
-    el.focus();
+    try { el.focus(); } catch {}
 
     if (params.clear) {
       // Clear with Selection API (select() doesn't exist on divs)
@@ -357,7 +362,7 @@ function handleType(params) {
 
   // Focus the element with full event sequence
   el.scrollIntoView({ block: 'center', behavior: 'instant' });
-  el.focus();
+  try { el.focus(); } catch {}
   el.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
   el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
 
@@ -400,6 +405,9 @@ function handleType(params) {
 function handleSelect(params) {
   const el = refMap.get(params.ref);
   if (!el) throw new Error(`Element ${params.ref} not found — page may have changed. Call browser_snapshot to get fresh ref IDs.`);
+  if (el.tagName?.toLowerCase() !== 'select') {
+    throw new Error(`Element ${params.ref} is not a <select>. Found <${el.tagName?.toLowerCase()}>. Call browser_snapshot to target the correct element.`);
+  }
 
   el.value = params.value;
   el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -410,7 +418,7 @@ function handleSelect(params) {
 
 function handleHover(ref) {
   const el = refMap.get(ref);
-  if (!el) throw new Error(`Element ${ref} not found.`);
+  if (!el) throw new Error(`Element ${ref} not found — page may have changed. Call browser_snapshot to get fresh ref IDs.`);
 
   el.scrollIntoView({ block: 'center', behavior: 'instant' });
   const rect = el.getBoundingClientRect();
@@ -439,11 +447,6 @@ async function handleWaitForSelector(params) {
     if (!document.querySelector(selector)) return { ok: true };
 
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        observer.disconnect();
-        reject(new Error(`Timeout waiting for "${selector}" to disappear`));
-      }, timeout);
-
       const observer = new MutationObserver(() => {
         if (!document.querySelector(selector)) {
           observer.disconnect();
@@ -451,6 +454,11 @@ async function handleWaitForSelector(params) {
           resolve({ ok: true });
         }
       });
+
+      const timer = setTimeout(() => {
+        observer.disconnect();
+        reject(new Error(`Timeout waiting for "${selector}" to disappear`));
+      }, timeout);
 
       observer.observe(document.documentElement, {
         childList: true,
@@ -465,11 +473,6 @@ async function handleWaitForSelector(params) {
   if (document.querySelector(selector)) return { ok: true };
 
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      observer.disconnect();
-      reject(new Error(`Timeout waiting for: ${selector}`));
-    }, timeout);
-
     const observer = new MutationObserver(() => {
       if (document.querySelector(selector)) {
         observer.disconnect();
@@ -477,6 +480,11 @@ async function handleWaitForSelector(params) {
         resolve({ ok: true });
       }
     });
+
+    const timer = setTimeout(() => {
+      observer.disconnect();
+      reject(new Error(`Timeout waiting for: ${selector}`));
+    }, timeout);
 
     observer.observe(document.documentElement, {
       childList: true,
@@ -511,7 +519,11 @@ function handleUpload(params) {
   const file = new File([bytes], fileName, { type: mimeType || 'application/octet-stream' });
   const dt = new DataTransfer();
   dt.items.add(file);
-  el.files = dt.files;
+  try {
+    el.files = dt.files;
+  } catch (err) {
+    throw new Error(`Failed to set files on input: ${err.message}. The browser may block programmatic file assignment.`);
+  }
 
   // Dispatch events that frameworks listen for
   el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -526,12 +538,6 @@ async function handleWaitForStable(params) {
   return new Promise((resolve, reject) => {
     let debounceTimer = null;
 
-    const timeoutTimer = setTimeout(() => {
-      observer.disconnect();
-      if (debounceTimer) clearTimeout(debounceTimer);
-      reject(new Error('Timeout waiting for DOM to stabilize'));
-    }, timeout);
-
     const settled = () => {
       observer.disconnect();
       clearTimeout(timeoutTimer);
@@ -542,6 +548,12 @@ async function handleWaitForStable(params) {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(settled, stableMs);
     });
+
+    const timeoutTimer = setTimeout(() => {
+      observer.disconnect();
+      if (debounceTimer) clearTimeout(debounceTimer);
+      reject(new Error('Timeout waiting for DOM to stabilize'));
+    }, timeout);
 
     observer.observe(document.documentElement, {
       childList: true,
