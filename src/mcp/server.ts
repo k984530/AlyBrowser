@@ -1811,6 +1811,7 @@ export class AlyBrowserMCPServer {
 
   private async handleNetworkThrottle(args: Record<string, unknown>): Promise<ToolResult> {
     const action = (args.action as string) || 'enable';
+    if (!['enable', 'disable'].includes(action)) return errorResult(`"action" must be "enable" or "disable"`);
 
     if (action === 'enable') {
       const presets: Record<string, number> = { '3g': 2000, '4g': 500, slow: 5000, offline: -1 };
@@ -2122,6 +2123,7 @@ export class AlyBrowserMCPServer {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
     const action = (args.action as string) || 'query';
+    if (!['query', 'click', 'text'].includes(action)) return errorResult(`"action" must be "query", "click", or "text"`);
 
     const result = await bridge.evaluate(`(() => {
       const path = ${JSON.stringify(pathStr)};
@@ -2356,6 +2358,7 @@ export class AlyBrowserMCPServer {
 
   private async handleHighlight(args: Record<string, unknown>): Promise<ToolResult> {
     const action = (args.action as string) || 'add';
+    if (!['add', 'clear'].includes(action)) return errorResult(`"action" must be "add" or "clear"`);
     if (action !== 'clear' && !args.selector) return errorResult('"selector" is required for add action');
 
     const bridge = this.ensureConnected(args);
@@ -2617,6 +2620,7 @@ export class AlyBrowserMCPServer {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
     const action = (args.action as string) || 'detect';
+    if (!['detect', 'remove'].includes(action)) return errorResult(`"action" must be "detect" or "remove"`);
 
     const result = await bridge.evaluate(`(() => {
       const action = ${JSON.stringify(action)};
@@ -2819,6 +2823,7 @@ export class AlyBrowserMCPServer {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
     const action = (args.action as string) || 'status';
+    if (!['configure', 'status', 'history'].includes(action)) return errorResult(`"action" must be "configure", "status", or "history"`);
 
     if (action === 'configure') {
       const alertResp = (args.alert as string) || 'accept';
@@ -2865,6 +2870,7 @@ export class AlyBrowserMCPServer {
 
   private async handleStyleOverride(args: Record<string, unknown>): Promise<ToolResult> {
     const action = (args.action as string) || 'inject';
+    if (!['inject', 'remove', 'list'].includes(action)) return errorResult(`"action" must be "inject", "remove", or "list"`);
 
     if (action === 'inject' && !args.css) return errorResult('"css" is required for inject action');
     if (action === 'remove' && !args.id) return errorResult('"id" is required for remove action');
@@ -2913,6 +2919,7 @@ export class AlyBrowserMCPServer {
 
   private async handleLocalStorage(args: Record<string, unknown>): Promise<ToolResult> {
     const action = (args.action as string) || 'list';
+    if (!['set', 'get', 'delete', 'clear', 'list'].includes(action)) return errorResult(`"action" must be one of: set, get, delete, clear, list`);
     const key = args.key as string | undefined;
     const value = args.value as string | undefined;
 
@@ -3332,6 +3339,7 @@ export class AlyBrowserMCPServer {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
     const action = (args.action as string) || 'read';
+    if (!['start', 'stop', 'read'].includes(action)) return errorResult(`"action" must be "start", "stop", or "read"`);
 
     const result = await bridge.evaluate(`(() => {
       const action = ${JSON.stringify(action)};
@@ -3482,6 +3490,7 @@ export class AlyBrowserMCPServer {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
     const action = (args.action as string) || 'detect';
+    if (!['detect', 'dark', 'light'].includes(action)) return errorResult(`"action" must be "detect", "dark", or "light"`);
 
     if (action === 'dark' || action === 'light') {
       // Emulate color scheme by injecting a meta tag + overriding matchMedia
@@ -4588,6 +4597,7 @@ export class AlyBrowserMCPServer {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
     const action = (args.action as string) || 'read';
+    if (!['start', 'read', 'stop'].includes(action)) return errorResult(`"action" must be "start", "read", or "stop"`);
 
     if (action === 'start') {
       await bridge.evaluate(`(() => {
@@ -4702,6 +4712,7 @@ export class AlyBrowserMCPServer {
     const bridge = this.ensureConnected(args);
     const tabId = args.tabId as number | undefined;
     const action = (args.action as string) || 'read';
+    if (!['start', 'read', 'stop'].includes(action)) return errorResult(`"action" must be "start", "read", or "stop"`);
     const filter = (args.filter as string) || '';
 
     if (action === 'start') {
