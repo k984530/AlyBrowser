@@ -42,6 +42,7 @@ npm run coverage   # vitest --coverage
 
 ## Recent Changes
 
+- **Stability & Quality (Sprint 15)**: 50+ fixes across 6 files. Process crash prevention (unhandledRejection handler, killSync(), TDZ bugs in content.js, WS race condition fix). Input validation for 28 handlers (requireString + action enum). Full iframe support chain: `bridge.evaluate(expr, tabId, frameId)` → `background.js handleEvaluate(params, tabId, frameId)` → `chrome.scripting.executeScript({ frameIds })`. 65 tool schemas expose frameId. 81/133 tools support iframe targeting. 650 tests (27 new), 71% line coverage.
 - **v1.0.0 Release Prep**: package.json v1.0.0, npm publish workflow (.github/workflows/publish.yml), CHANGELOG.md, README with full 49-tool API reference. JWT exp claim validation. Password field masking in DOM snapshots. Obsolete scripts removed.
 - **Crash Recovery (v0.9.0)**: Auto-detects Chrome crash (non-zero exit) or unexpected WS disconnect. Exponential backoff recovery (1s→2s→4s, max 3 attempts). Reuses profile directory to preserve cookies/localStorage. Recovery resets on success. Intentional `close()` skips recovery.
 - **Site Knowledge Security (v0.9.0)**: Sensitive data filtering via `redactSensitive()` — passwords, tokens, API keys, JWTs, long hex secrets, email:password combos automatically masked with `[REDACTED]`. AES-256-GCM encrypted storage with per-installation key (`~/.aly-browser/site-knowledge/.encryption-key`, 0600 permissions). Transparent migration from plaintext JSON.
@@ -63,3 +64,6 @@ npm run coverage   # vitest --coverage
 - Crash Recovery: Chrome non-zero exit or WS close → auto-restart with backoff (1s/2s/4s, max 3). `_intentionalClose` flag prevents recovery on `close()`
 - Site Knowledge: `redactSensitive()` filters credentials before storage. AES-256-GCM encrypted on disk. Plaintext auto-migrated on load
 - Password masking: `input[type=password]` values shown as `••••••••` in snapshots
+- eval frameId: `bridge.evaluate(expr, tabId, frameId)` → `background.js` routes via `chrome.scripting.executeScript({ frameIds })`. 81/133 tools support iframe targeting
+- Input validation: `requireString()` for required params, action enum validation before `ensureConnected()`, `tabFrame()` helper for tabId/frameId extraction
+- Process lifecycle: `unhandledRejection` handler (don't exit), `killSync()` for beforeExit, `_cleaningUp` guard against double SIGINT/SIGTERM
