@@ -51,11 +51,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/AlyBrowser/aly-browser.git"
+    "url": "git+https://github.com/k984530/AlyBrowser.git"
   },
-  "homepage": "https://github.com/AlyBrowser/aly-browser#readme",
+  "homepage": "https://github.com/k984530/AlyBrowser#readme",
   "bugs": {
-    "url": "https://github.com/AlyBrowser/aly-browser/issues"
+    "url": "https://github.com/k984530/AlyBrowser/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
