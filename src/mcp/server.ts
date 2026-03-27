@@ -87,9 +87,9 @@ function jsonResult(data: unknown): ToolResult {
 }
 
 /** Safely parse JSON from eval results. Returns parsed object or throws with context. */
-function safeJsonParse(result: unknown, context?: string): Record<string, unknown> {
+function safeJsonParse(result: unknown, context?: string): any {
   try {
-    return typeof result === 'string' ? JSON.parse(result) : (result as Record<string, unknown>);
+    return typeof result === 'string' ? JSON.parse(result) : (result as any);
   } catch {
     const ctx = context ? `[${context}] ` : '';
     throw new Error(`${ctx}Failed to parse eval result: ${String(result).slice(0, 200)}`);
